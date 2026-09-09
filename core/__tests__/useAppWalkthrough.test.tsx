@@ -7,7 +7,7 @@ import { expect, test, vi } from 'vite-plus/test';
 import { useAppWalkthrough } from '../app/hooks/useAppWalkthrough.ts';
 import { createDefaultConfig } from '../config/defaults.ts';
 import type { NarrativeWalkthrough, RepositoryState, WalkthroughProgressEvent } from '../types.ts';
-import { createChangedFile } from './helpers/fixtures.ts';
+import { createChangedFile, createWalkthroughProgress } from './helpers/fixtures.ts';
 import { renderReact, waitFor } from './helpers/react.tsx';
 
 type AppWalkthroughController = ReturnType<typeof useAppWalkthrough>;
@@ -183,7 +183,7 @@ test('walkthrough controller routes progress, commit APIs, and sharing through c
   const { getController, preferencesRef } = view;
 
   await act(async () => {
-    onProgress?.({ phase: 'agent-generation' });
+    onProgress?.(createWalkthroughProgress('agent-generation'));
   });
   expect(getController().walkthroughProgress.phase).toBe('agent-generation');
   expect(getController().walkthroughProgress.stageRevision).toBe(1);

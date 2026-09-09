@@ -1,6 +1,7 @@
 // @ts-check
 
 const { createHash } = require('node:crypto');
+const { execFile } = require('node:child_process');
 const { existsSync, mkdirSync, readdirSync, rmSync, statSync, utimesSync } = require('node:fs');
 const { homedir } = require('node:os');
 const { join } = require('node:path');
@@ -96,7 +97,7 @@ const removeReviewWorktree = async (repoRoot, path) => {
  * behind for a fortnight.
  *
  * @param {string} repoRoot
- * @param {string} keepPath
+ * @param {string} [keepPath] The checkout in use, which is never retired.
  */
 const pruneReviewWorktrees = async (repoRoot, keepPath) => {
   const directory = getRepositoryWorktreeDir(repoRoot);
@@ -116,10 +117,12 @@ const pruneReviewWorktrees = async (repoRoot, keepPath) => {
   const fresh = entries
     .filter((entry) => now - entry.lastUsed <= MAX_WORKTREE_AGE_MS)
     .sort((left, right) => right.lastUsed - left.lastUsed);
+  // The checkout being kept counts against the cap, so the rest of the store
+  // gets one fewer slot. A sweep with nothing to keep gets the whole cap.
+  const capacity = keepPath ? MAX_WORKTREES_PER_REPOSITORY - 1 : MAX_WORKTREES_PER_REPOSITORY;
   const stale = [
     ...entries.filter((entry) => now - entry.lastUsed > MAX_WORKTREE_AGE_MS),
-    // The checkout being kept counts against the cap.
-    ...fresh.slice(Math.max(0, MAX_WORKTREES_PER_REPOSITORY - 1)),
+    ...fresh.slice(Math.max(0, capacity)),
   ];
   for (const entry of stale) {
     await removeReviewWorktree(repoRoot, entry.path);
@@ -269,12 +272,86 @@ const resolveReviewContentRoot = async (repoRoot, source) => {
   }
 };
 
+/**
+ * Every review checkout this repository has on disk, newest use first.
+ *
+ * @param {string} repoRoot
+ * @returns {ReadonlyArray<{lastUsed: number; path: string}>}
+ */
+const listReviewWorktrees = (repoRoot) => {
+  try {
+    return readdirSync(getRepositoryWorktreeDir(repoRoot), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const path = join(getRepositoryWorktreeDir(repoRoot), entry.name);
+        return { lastUsed: getLastUsed(path), path };
+      })
+      .sort((left, right) => right.lastUsed - left.lastUsed);
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Bytes on disk, or `undefined` when that could not be measured in time.
+ *
+ * Walking a monorepo checkout is slow enough to notice, and this runs while the
+ * reviewer is trying to quit. The size is a courtesy in a prompt, so a slow
+ * answer is worth less than no answer: give up and let the prompt say less.
+ *
+ * @param {ReadonlyArray<string>} paths
+ * @param {number} [timeoutMs]
+ * @returns {Promise<number | undefined>}
+ */
+const measureReviewWorktrees = (paths, timeoutMs = 1500) =>
+  new Promise((resolve) => {
+    if (paths.length === 0) {
+      resolve(0);
+      return;
+    }
+
+    execFile('du', ['-sk', ...paths], { timeout: timeoutMs }, (error, stdout) => {
+      if (error) {
+        resolve(undefined);
+        return;
+      }
+
+      let total = 0;
+      for (const line of stdout.split('\n')) {
+        const kilobytes = Number.parseInt(line, 10);
+        if (Number.isFinite(kilobytes)) {
+          total += kilobytes;
+        }
+      }
+      resolve(total * 1024);
+    });
+  });
+
+/**
+ * Remove every review checkout for a repository. Used by the reviewer-facing
+ * cleanup, where the point is to reclaim the space rather than to keep a
+ * working set.
+ *
+ * @param {string} repoRoot
+ * @returns {Promise<number>} How many checkouts were removed.
+ */
+const removeReviewWorktrees = async (repoRoot) => {
+  const entries = listReviewWorktrees(repoRoot);
+  for (const entry of entries) {
+    await removeReviewWorktree(repoRoot, entry.path);
+  }
+  return entries.length;
+};
+
 module.exports = {
   MAX_WORKTREES_PER_REPOSITORY,
   MAX_WORKTREE_AGE_MS,
   ensureReviewWorktree,
   getRepositoryWorktreeDir,
   getReviewWorktreePath,
+  listReviewWorktrees,
+  measureReviewWorktrees,
   pruneReviewWorktrees,
+  removeReviewWorktrees,
   resolveReviewContentRoot,
 };

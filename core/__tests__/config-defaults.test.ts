@@ -9,11 +9,15 @@ import { createDefaultConfig } from '../config/defaults.ts';
 import { createTemporaryDirectorySync, createTemporaryEnvironment } from './helpers/resources.ts';
 
 const require = createRequire(import.meta.url);
-const { createDefaultConfig: createElectronDefaultConfig, readConfig } =
-  require('../../electron/config.cjs') as {
-    createDefaultConfig: typeof createDefaultConfig;
-    readConfig: () => ReturnType<typeof createDefaultConfig>;
-  };
+const {
+  createDefaultConfig: createElectronDefaultConfig,
+  readConfig,
+  writeConfig,
+} = require('../../electron/config.cjs') as {
+  createDefaultConfig: typeof createDefaultConfig;
+  readConfig: () => ReturnType<typeof createDefaultConfig>;
+  writeConfig: (config: ReturnType<typeof createDefaultConfig>) => void;
+};
 
 const readElectronConfig = (raw: unknown) => {
   using home = createTemporaryDirectorySync('codiff-config-home.');
@@ -171,4 +175,32 @@ test('npm package includes runtime config and bundled skills', () => {
   expect(packageJson.files).toContain('claude');
   expect(packageJson.files).toContain('opencode');
   expect(packageJson.files).toContain('pi');
+});
+
+test('writing config keeps edits made to the file since it was read', () => {
+  using home = createTemporaryDirectorySync('codiff-config-write.');
+  using _environment = createTemporaryEnvironment({ HOME: home.path });
+  const configDirectory = join(home.path, '.codiff');
+  mkdirSync(configDirectory);
+  const configPath = join(configDirectory, 'codiff.jsonc');
+  writeFileSync(configPath, `${JSON.stringify({ settings: {} })}\n`);
+
+  // What a running instance loaded at start.
+  const loaded = readConfig();
+
+  // What the reviewer then edited by hand, which the instance never saw.
+  writeFileSync(
+    configPath,
+    `${JSON.stringify({
+      settings: { autoViewedPatterns: ['**/*.test.ts'], reviewCommentsPrefix: 'Edited' },
+    })}\n`,
+  );
+
+  // Codiff writes for a reason of its own, such as falling back to a model.
+  writeConfig({ ...loaded, settings: { ...loaded.settings, claudeModel: 'fallback-model' } });
+
+  const result = readConfig();
+  expect(result.settings.autoViewedPatterns).toEqual(['**/*.test.ts']);
+  expect(result.settings.reviewCommentsPrefix).toBe('Edited');
+  expect(result.settings.claudeModel).toBe('fallback-model');
 });

@@ -1596,13 +1596,44 @@ html[data-codiff-platform='darwin'] .sidebar {
   user-select: none;
 }
 
+/*
+ * The pulse means "producing", so it has to stop when production does.
+ * Animating on a timer regardless would show the same reassuring rhythm for an
+ * agent that is streaming and for one that has silently stopped.
+ */
+.walkthrough-progress.idle,
+.sidebar-walkthrough-status.codex .walkthrough-progress.idle {
+  animation: none;
+  opacity: 0.55;
+}
+
 .walkthrough-progress {
-  align-items: baseline;
+  align-items: center;
   display: flex;
+  flex-direction: column;
   font-weight: 400;
+  gap: 2px;
   justify-content: center;
   min-width: 0;
   width: 100%;
+}
+
+.walkthrough-progress-line {
+  align-items: baseline;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.walkthrough-progress-detail {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .walkthrough-progress-label {

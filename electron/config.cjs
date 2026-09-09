@@ -170,7 +170,7 @@ const normalizeAutoViewedPatterns = (patterns, fallback) =>
     : [...fallback];
 
 /** @param {unknown} value @param {string} fallback @returns {'ask' | 'always' | 'never'} */
-const normalizeAutoViewedSync = (value, fallback) =>
+const normalizeAskAlwaysNever = (value, fallback) =>
   value === 'ask' || value === 'always' || value === 'never'
     ? value
     : fallback === 'always' || fallback === 'never'
@@ -308,7 +308,7 @@ const mergeConfig = (raw) => {
         rawSettings.autoViewedPatterns,
         defaults.settings.autoViewedPatterns,
       ),
-      autoViewedSync: normalizeAutoViewedSync(
+      autoViewedSync: normalizeAskAlwaysNever(
         rawSettings.autoViewedSync,
         defaults.settings.autoViewedSync,
       ),
@@ -368,6 +368,10 @@ const mergeConfig = (raw) => {
         typeof rawSettings.wordWrap === 'boolean'
           ? rawSettings.wordWrap
           : defaults.settings.wordWrap,
+      worktreeCleanup: normalizeAskAlwaysNever(
+        rawSettings.worktreeCleanup,
+        defaults.settings.worktreeCleanup,
+      ),
     },
   };
 };
@@ -387,14 +391,53 @@ const readConfig = (configDir) => {
   try {
     const text = readFileSync(configPath, 'utf8');
     const raw = parseJsonc(text);
-    return mergeConfig(raw);
+    const merged = mergeConfig(raw);
+    if (configDir === undefined) {
+      lastReadConfig = merged;
+    }
+    return merged;
   } catch {
     return createDefaultConfig();
   }
 };
 
 /**
+ * The config as this process last saw it on disk. Used to tell an intentional
+ * change apart from a value that merely came along for the ride.
+ *
+ * @type {CodiffConfig | null}
+ */
+let lastReadConfig = null;
+
+/**
+ * @template {Record<string, unknown>} T
+ * @param {T} disk @param {T} next @param {T | undefined} baseline
+ * @returns {T}
+ */
+const mergeChangedKeys = (disk, next, baseline) => {
+  if (!baseline) {
+    return next;
+  }
+
+  const merged = { ...disk };
+  for (const key of Object.keys(next)) {
+    if (next[key] !== baseline[key]) {
+      // @ts-expect-error -- writing back the same key the value came from.
+      merged[key] = next[key];
+    }
+  }
+  return /** @type {T} */ (merged);
+};
+
+/**
  * Write a config object to the config file as JSONC with a $schema reference.
+ *
+ * Only the keys this process actually changed are written over what is on
+ * disk. Serializing the whole in-memory config instead would stamp a stale
+ * copy over any edit made since it was loaded — and Codiff writes config on
+ * its own, for a model fallback or a font change, so that loss needs no
+ * unusual timing to happen.
+ *
  * @param {CodiffConfig} config
  */
 const writeConfig = (config) => {
@@ -403,13 +446,23 @@ const writeConfig = (config) => {
     mkdirSync(configDir, { recursive: true });
   }
 
+  // Captured before the read below, which replaces it with what is on disk.
+  const baseline = lastReadConfig;
+  const disk = existsSync(getConfigPath()) ? readConfig() : config;
+  const merged = {
+    ...config,
+    keymap: mergeChangedKeys(disk.keymap, config.keymap, baseline?.keymap),
+    settings: mergeChangedKeys(disk.settings, config.settings, baseline?.settings),
+  };
+
   const output = {
     $schema: SCHEMA_URL,
-    keymap: config.keymap,
-    settings: config.settings,
+    keymap: merged.keymap,
+    settings: merged.settings,
   };
 
   writeFileSync(getConfigPath(), JSON.stringify(output, null, 2) + '\n');
+  lastReadConfig = merged;
 };
 
 /**
@@ -518,8 +571,8 @@ const configToPreferences = (config) => ({
 
 module.exports = {
   configToPreferences,
+  normalizeAskAlwaysNever,
   normalizeAutoViewedPatterns,
-  normalizeAutoViewedSync,
   createDefaultConfig,
   getConfigPath,
   initConfig,

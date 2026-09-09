@@ -3,6 +3,7 @@ export type CodiffTheme = 'system' | 'light' | 'dark';
 export type CodiffAgentBackend = 'codex' | 'claude' | 'opencode' | 'pi';
 
 export type CodiffAutoViewedSync = 'ask' | 'always' | 'never';
+export type CodiffWorktreeCleanup = 'ask' | 'always' | 'never';
 
 export type CodiffSettings = {
   agentBackend: CodiffAgentBackend;
@@ -28,6 +29,7 @@ export type CodiffSettings = {
   theme: CodiffTheme;
   walkthroughPrompt: string;
   wordWrap: boolean;
+  worktreeCleanup: CodiffWorktreeCleanup;
 };
 
 export type KeyCombo = string;

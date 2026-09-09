@@ -15,11 +15,14 @@ import type {
   SharedWalkthroughSnapshot,
   WalkthroughCommitMessageRequest,
   WalkthroughCommitRequest,
-  WalkthroughProgressEvent,
 } from '../../types.ts';
 import type { WalkthroughReviewTarget } from '../components/walkthrough/NarrativeWalkthroughView.tsx';
 import { useNarrativeNavigation } from '../components/walkthrough/useNarrativeNavigation.ts';
-import { nextWalkthroughResponseLabelIndex } from '../components/walkthrough/WalkthroughProgress.tsx';
+import {
+  initialWalkthroughProgress,
+  nextWalkthroughResponseLabelIndex,
+  type WalkthroughProgressState,
+} from '../components/walkthrough/WalkthroughProgress.tsx';
 import type { WalkthroughFileError } from '../components/WalkthroughFileError.tsx';
 
 type MainMode = 'commit' | 'review';
@@ -50,11 +53,9 @@ export function useAppWalkthrough({
     null,
   );
   const [walkthroughLoading, setWalkthroughLoading] = useState(false);
-  const [walkthroughProgress, setWalkthroughProgress] = useState<{
-    phase: WalkthroughProgressEvent['phase'] | null;
-    responseLabelIndex: number;
-    stageRevision: number;
-  }>({ phase: null, responseLabelIndex: -1, stageRevision: 0 });
+  const [walkthroughProgress, setWalkthroughProgress] = useState<WalkthroughProgressState>(
+    initialWalkthroughProgress,
+  );
   const [walkthroughSharing, setWalkthroughSharing] = useState(false);
   const [walkthroughUnread, setWalkthroughUnread] = useState(false);
   const activeReviewCommandTargetRef = useRef<ReviewCommandTarget | null>(null);
@@ -98,24 +99,26 @@ export function useAppWalkthrough({
   useEffect(
     () =>
       window.codiff.onWalkthroughProgress((progress) => {
-        setWalkthroughProgress((current) =>
-          current.phase === progress.phase
-            ? current
-            : {
-                phase: progress.phase,
-                responseLabelIndex: current.responseLabelIndex,
-                stageRevision: current.stageRevision + 1,
-              },
-        );
+        // Every event is kept, not just the ones that change the phase. A
+        // repeated phase is the agent still producing, which is the whole
+        // question a reviewer is asking while they wait.
+        setWalkthroughProgress((current) => ({
+          ...progress,
+          responseLabelIndex: current.responseLabelIndex,
+          stageRevision:
+            current.phase === progress.phase ? current.stageRevision : current.stageRevision + 1,
+          updatedAt: Date.now(),
+        }));
       }),
     [],
   );
 
   const startWalkthroughLoading = useCallback(() => {
     setWalkthroughProgress((current) => ({
-      phase: null,
+      ...initialWalkthroughProgress,
       responseLabelIndex: nextWalkthroughResponseLabelIndex(current.responseLabelIndex),
       stageRevision: current.stageRevision + 1,
+      updatedAt: Date.now(),
     }));
     setWalkthroughLoading(true);
   }, []);

@@ -1801,6 +1801,7 @@ export default function App() {
         {launchOptions.walkthrough ? (
           <WalkthroughProgress
             phase={walkthroughProgress.phase}
+            progress={walkthroughProgress}
             responseLabelIndex={walkthroughProgress.responseLabelIndex}
             stageRevision={walkthroughProgress.stageRevision}
           />

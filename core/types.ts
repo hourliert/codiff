@@ -270,10 +270,22 @@ export type CodiffFeatureFlags = {
   walkthroughSharing: boolean;
 };
 
-export type WalkthroughProgressPhase = 'agent-generation' | 'response-received';
+export type WalkthroughProgressPhase = 'agent-generation' | 'preparing-files' | 'response-received';
 
+/**
+ * How much the agent has produced so far. Only counts cross the process
+ * boundary: the model's text stays in the main process, and the renderer
+ * receives the volume of it so a reviewer can tell work from a stall.
+ */
 export type WalkthroughProgressEvent = {
+  /** Structures completed in the streamed response, when it exposes them. */
+  chapters: number;
+  /** Stream events seen so far. Advances even when nothing else does. */
+  deltas: number;
+  outputCharacters: number;
   phase: WalkthroughProgressPhase;
+  stops: number;
+  thinkingCharacters: number;
 };
 
 export type CodiffMarkdownDocument = {

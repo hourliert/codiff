@@ -80,11 +80,7 @@ export function Sidebar({
   viewed: Record<string, string>;
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
-  walkthroughProgress: {
-    phase: import('../../types.ts').WalkthroughProgressPhase | null;
-    responseLabelIndex: number;
-    stageRevision: number;
-  };
+  walkthroughProgress: import('./walkthrough/WalkthroughProgress.tsx').WalkthroughProgressState;
 }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lineCountsByPath = useMemo(
@@ -155,6 +151,7 @@ export function Sidebar({
               <div className="sidebar-walkthrough-status codex">
                 <WalkthroughProgress
                   phase={walkthroughProgress.phase}
+                  progress={walkthroughProgress}
                   responseLabelIndex={walkthroughProgress.responseLabelIndex}
                   stageRevision={walkthroughProgress.stageRevision}
                 />
