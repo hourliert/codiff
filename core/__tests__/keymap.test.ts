@@ -951,6 +951,7 @@ function createTestContext({
     askAgent: 'Mod+Alt+Enter',
     closeSearch: 'Escape',
     commandBar: 'Mod+k',
+    copyComments: 'Mod+Shift+c',
     diffSearch: 'Mod+f',
     discardComment: 'Escape',
     fileFilter: 'Mod+p',

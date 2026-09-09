@@ -839,16 +839,36 @@ const createPullRequestSection = (pullRequest, file, patch, oldFile, newFile) =>
   };
 };
 
+/**
+ * The signed-in GitHub account, used to tell Thomas's own posted comments apart
+ * from everyone else's. Cached for the process: it cannot change while Codiff
+ * runs, and every pull request would otherwise pay for the same lookup. A
+ * failure here is not worth failing a review over — the caller degrades to
+ * treating no posted comment as its own.
+ *
+ * @type {Promise<string | undefined> | undefined}
+ */
+let viewerLoginPromise;
+
+/** @param {string} repoRoot @returns {Promise<string | undefined>} */
+const readGitHubViewerLogin = (repoRoot) => {
+  viewerLoginPromise ??= ghApi(repoRoot, ['user', '--jq', '.login'])
+    .then((stdout) => stdout.trim() || undefined)
+    .catch(() => undefined);
+  return viewerLoginPromise;
+};
+
 /** @param {string} launchPath @param {Extract<ReviewSource, {type: 'pull-request'}>} source @returns {Promise<RepositoryState>} */
 const readPullRequestState = async (launchPath, source) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
   const pullRequest = parseGitHubPullRequestUrl(source.url);
 
-  const [metadata, apiFiles, diff, reviewComments] = await Promise.all([
+  const [metadata, apiFiles, diff, reviewComments, viewerLogin] = await Promise.all([
     readPullRequestMetadata(repoRoot, pullRequest),
     readPullRequestFiles(repoRoot, pullRequest),
     readPullRequestDiff(repoRoot, pullRequest),
     readPullRequestComments(repoRoot, pullRequest),
+    readGitHubViewerLogin(repoRoot),
   ]);
   const remote = await selectPullRequestRemote(repoRoot, pullRequest, metadata.head?.sha);
   const diffByPath = splitPullRequestDiff(diff);
@@ -924,6 +944,7 @@ const readPullRequestState = async (launchPath, source) => {
     reviewComments,
     root: repoRoot,
     source: createPullRequestSource(pullRequest, metadata),
+    ...(viewerLogin ? { viewerLogin } : {}),
   };
 };
 

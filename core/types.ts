@@ -249,6 +249,8 @@ export type RepositoryState = {
   reviewComments?: ReadonlyArray<PullRequestExistingReviewComment>;
   root: string;
   source: ReviewSource;
+  /** Signed-in GitHub account, so posted comments can be attributed. */
+  viewerLogin?: string;
 };
 
 export type CodiffFeatureFlags = {

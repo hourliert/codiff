@@ -22,7 +22,7 @@ import {
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffKeymap } from '../../config/types.ts';
 import type { RepositoryLoadError, ReviewComment } from '../../lib/app-types.ts';
-import { buildReviewCommentsMarkdown } from '../../lib/review-comments.ts';
+import { buildReviewCommentsMarkdown, isOwnReviewComment } from '../../lib/review-comments.ts';
 import type {
   ChangedFile,
   CodiffUpdateStatus,
@@ -386,15 +386,17 @@ export function CopyCommentsButton({
   files,
   reviewCommentsPrefix,
   showWhitespace,
+  viewerLogin,
 }: {
   comments: ReadonlyArray<ReviewComment>;
   files: ReadonlyArray<ChangedFile>;
   reviewCommentsPrefix: string;
   showWhitespace: boolean;
+  viewerLogin?: string;
 }) {
   const [copied, markCopied] = useCopiedState(2000);
   const pendingCommentCount = comments.filter(
-    (comment) => !comment.isReadOnly && comment.body.trim(),
+    (comment) => isOwnReviewComment(comment, viewerLogin) && comment.body.trim(),
   ).length;
 
   const copyComments = useCallback(async () => {
@@ -403,6 +405,7 @@ export function CopyCommentsButton({
       comments,
       showWhitespace,
       reviewCommentsPrefix,
+      viewerLogin,
     );
     if (!markdown) {
       return;
@@ -410,7 +413,7 @@ export function CopyCommentsButton({
 
     await navigator.clipboard.writeText(markdown);
     markCopied();
-  }, [comments, files, markCopied, reviewCommentsPrefix, showWhitespace]);
+  }, [comments, files, markCopied, reviewCommentsPrefix, showWhitespace, viewerLogin]);
 
   return (
     <button

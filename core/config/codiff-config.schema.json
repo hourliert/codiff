@@ -139,6 +139,11 @@
           "default": "Mod+k",
           "description": "Open the command palette."
         },
+        "copyComments": {
+          "type": "string",
+          "default": "Mod+Shift+c",
+          "description": "Copy every review comment you have written on this diff, posted or not, as one Markdown block."
+        },
         "diffSearch": {
           "type": "string",
           "default": "Mod+f",

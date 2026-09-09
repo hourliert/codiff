@@ -111,6 +111,7 @@ export function useAppCommands({
             reviewCommentsRef.current,
             preferencesRef.current.showWhitespace,
             preferencesRef.current.reviewCommentsPrefix,
+            currentState.viewerLogin,
           );
           if (markdown) {
             void navigator.clipboard.writeText(markdown);
@@ -131,6 +132,7 @@ export function useAppCommands({
             reviewCommentsRef.current,
             preferencesRef.current.showWhitespace,
             preferencesRef.current.reviewCommentsPrefix,
+            currentState.viewerLogin,
           );
           if (markdown) {
             void navigator.clipboard.writeText(markdown).then(() => {
