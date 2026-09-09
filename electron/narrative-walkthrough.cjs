@@ -305,7 +305,7 @@ const normalizeChapters = (input, index, coveredHunkIds) => {
   let stopCount = 0;
 
   for (const chapter of Array.isArray(input?.chapters) ? input.chapters : []) {
-    if (chapters.length >= MAX_WALKTHROUGH_CHAPTERS || stopCount >= MAX_WALKTHROUGH_STOPS) {
+    if (chapters.length >= MAX_WALKTHROUGH_CHAPTERS) {
       break;
     }
 
@@ -317,7 +317,11 @@ const normalizeChapters = (input, index, coveredHunkIds) => {
     const stops = [];
     const seenStopHunkGroups = new Set();
     for (const stop of Array.isArray(chapter?.stops) ? chapter.stops : []) {
-      if (stopCount >= MAX_WALKTHROUGH_STOPS) {
+      // Per chapter, matching the schema's `maxItems` on a chapter's stops[].
+      // Counting across the whole walkthrough instead silently discarded every
+      // chapter after the total was reached, and the discarded chapters' hunks
+      // then fell through to the support sweep.
+      if (stops.length >= MAX_WALKTHROUGH_STOPS) {
         break;
       }
 
@@ -773,19 +777,11 @@ const getNarrativeWalkthroughTimeoutMs = (state, minimumMs = BASE_WALKTHROUGH_TI
 const buildWalkthroughSizingGuidance = (state) => {
   const { fileCount, hunkCount } = getWalkthroughSize(state);
   const focusedSmallChange = hunkCount <= 12 || (fileCount <= 4 && hunkCount <= 16);
-  // Large diffs scale their stop count with the amount of reviewable material
-  // instead of landing on one flat range. A fixed "6-9 stops" ceiling forced
-  // almost everything in a large PR into support no matter how good the patch
-  // excerpts were, because there was nowhere on the main path to put it.
-  // Roughly one stop per three hunks keeps each stop a single review idea.
-  const scaledStops = Math.max(
-    6,
-    Math.min(MAX_WALKTHROUGH_CHAPTERS * MAX_WALKTHROUGH_STOPS, Math.ceil(hunkCount / 3)),
-  );
-  const scaledChapters = Math.max(
-    2,
-    Math.min(MAX_WALKTHROUGH_CHAPTERS, Math.ceil(scaledStops / MAX_WALKTHROUGH_STOPS) + 1),
-  );
+  // Large diffs get no numeric stop target. Asking for a count proportional to
+  // the diff made the model split one theme into many single-hunk stops rather
+  // than cover more of the change: hunks per stop fell from 4.7 to 2.2 while
+  // total main-path coverage dropped. Small diffs keep their ceilings, which
+  // exist to stop a trivial change sprawling.
   const stopInstruction =
     hunkCount <= 4
       ? 'Use at most 2 main-path stops'
@@ -793,7 +789,7 @@ const buildWalkthroughSizingGuidance = (state) => {
         ? 'Use at most 3 main-path stops'
         : fileCount <= 8 && hunkCount <= 32
           ? 'Use at most 5 main-path stops'
-          : `Aim for ${Math.max(5, Math.floor(scaledStops * 0.7))}-${scaledStops} main-path stops in total across all chapters`;
+          : 'Write one stop per distinct review idea, and as many as this change genuinely contains';
   const chapterInstruction =
     fileCount <= 2
       ? 'Use 1 story chapter'
@@ -801,7 +797,7 @@ const buildWalkthroughSizingGuidance = (state) => {
         ? 'Use at most 2 story chapters'
         : fileCount <= 8 && hunkCount <= 32
           ? 'Use at most 3 story chapters'
-          : `Use 2-${scaledChapters} story chapters`;
+          : `Use 2-${MAX_WALKTHROUGH_CHAPTERS} story chapters`;
   return `Coverage contract:
 - The digest has ${fileCount} files and ${hunkCount} reviewable hunks. Put the highest-leverage review path in chapters[]; Codiff preserves everything else as support.
 - Digest hunk ids are compact request-local aliases like h1 and h2. Return those aliases exactly; Codiff maps them back to stable live-diff ids.
@@ -815,7 +811,7 @@ Grouping contract:
 - ${chapterInstruction}. A chapter is a conceptual group, not a file. For one- or two-file diffs, prefer one chapter unless there are clearly separate review phases.
 - Chapter titles render in a compact top bar: keep each title to 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
 - Every stop must have a concise semantic title that names the review idea in roughly 2-6 words, e.g. "Prevent duplicate payments" or "Preserve offline drafts". Never use a filename or path as a stop title.
-- A stop may contain at most ${MAX_HUNKS_PER_WALKTHROUGH_GROUP} hunkIds. Use multiple hunkIds when the prose needs those hunks read together to understand one invariant, behavior, or repeated pattern.
+- A stop may contain up to ${MAX_HUNKS_PER_WALKTHROUGH_GROUP} hunkIds, and on a large diff most stops should carry several. Use multiple hunkIds when the prose needs those hunks read together to understand one invariant, behavior, or repeated pattern.
 - A Git hunk boundary is not a walkthrough boundary. Group hunks that only make sense together, and never create a stop whose explanation depends primarily on code assigned to another stop.
 - Generated-like files have "generated": true and one synthetic hunk per changed section. Never split them; main-path them only when they explain behavior, like snapshots proving output.
 - For 1-4 total hunks, usually write 1-2 stops. Similar same-file hunks should usually be one stop with multiple hunkIds, not separate chapters or stops.
@@ -823,7 +819,7 @@ Grouping contract:
 - Do not group a whole large file into one stop when its hunks implement distinct workflows, state transitions, or submission paths.
 - Put hunkIds in the exact display order you want Codiff to render. Out-of-line and cross-file order is allowed when it improves reviewer comprehension.
 - Do not provide added/deleted counts, status, oldPath, section ids, display labels, path, repo, source, generatedAt, agent, or meta; Codiff computes those.
-- Leave secondary, mechanical, docs-only, generated, styling, fixture, and repeated-pattern hunks out of chapters[]. Codiff automatically places every unreferenced hunk in support. Support is for changes that genuinely do not need review attention — it is not an overflow bucket for material that did not fit, so do not drop a substantive change there merely to stay near the low end of the stop range.
+- Leave out of chapters[] only what genuinely needs no review attention: generated files, lockfiles, snapshots, formatting-only edits, and mechanical churn that repeats a decision already covered by a stop. Codiff automatically places every unreferenced hunk in support. Source changes that alter behavior belong on the main path even when they are small, and a change threaded across many files is one stop carrying all of its hunks, not a reason to leave the rest in support.
 - For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
 `;
 };
