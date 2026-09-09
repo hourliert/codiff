@@ -10,7 +10,7 @@ import type { ChangedFile } from '../../types.ts';
 
 type UseReviewFileStateOptions = {
   initialSelectedPath?: string | null;
-  onViewedChange?: (viewed: Record<string, string>) => void;
+  onViewedChange?: (viewed: Record<string, string>, previous: Record<string, string>) => void;
 };
 
 export function useReviewFileState({
@@ -63,7 +63,7 @@ export function useReviewFileState({
     ) => {
       setViewed((current) => {
         const next = updateReviewIdentityViewed(current, reviewIdentity, isViewed);
-        onViewedChange?.(next);
+        onViewedChange?.(next, current);
         return next;
       });
       const fileKey = reviewIdentity.coverage?.file.key ?? file.path;

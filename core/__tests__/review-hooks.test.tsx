@@ -19,7 +19,7 @@ function ReviewFileStateHarness({
   onViewedChange,
 }: {
   onState: (state: ReviewFileState) => void;
-  onViewedChange?: (viewed: Record<string, string>) => void;
+  onViewedChange?: (viewed: Record<string, string>, previous: Record<string, string>) => void;
 }) {
   const state = useReviewFileState({
     initialSelectedPath: 'src/initial.ts',
@@ -67,16 +67,22 @@ test('review file state keeps collapse, generated expansion, viewed state, and v
   expect(getState().collapsed.has(reviewIdentity.key)).toBe(true);
   expect(getState().expandedReviewKeys.has(reviewIdentity.key)).toBe(false);
   expect(getState().itemVersionByKey[reviewIdentity.key]).toBe(2);
-  expect(onViewedChange).toHaveBeenLastCalledWith({
-    [reviewIdentity.key]: reviewIdentity.fingerprint,
-  });
+  // The previous state comes along so callers can tell which files changed,
+  // which is what decides the viewed updates pushed to the review host.
+  expect(onViewedChange).toHaveBeenLastCalledWith(
+    { [reviewIdentity.key]: reviewIdentity.fingerprint },
+    {},
+  );
   await act(async () => {
     getState().toggleViewed(file, true, reviewIdentity);
   });
   expect(getState().viewed).toEqual({});
   expect(getState().collapsed.has(reviewIdentity.key)).toBe(false);
   expect(getState().itemVersionByKey[reviewIdentity.key]).toBe(3);
-  expect(onViewedChange).toHaveBeenLastCalledWith({});
+  expect(onViewedChange).toHaveBeenLastCalledWith(
+    {},
+    { [reviewIdentity.key]: reviewIdentity.fingerprint },
+  );
 });
 
 function ResizableSidebarHarness({

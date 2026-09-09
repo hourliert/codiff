@@ -494,6 +494,156 @@ const selectUnresolvedReviewComments = (comments, resolvedCommentIds) =>
     .map(normalizeGitHubReviewComment)
     .filter(Boolean);
 
+/**
+ * GitHub tracks a viewed flag per file per reviewer, which is the same signal
+ * Codiff shows in the diff header. `DISMISSED` means the file was viewed and
+ * has changed since, so only `VIEWED` counts as viewed.
+ */
+const PULL_REQUEST_VIEWED_STATE_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      id
+      files(first: 100, after: $cursor) {
+        nodes {
+          path
+          viewerViewedState
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+}`;
+
+const MARK_FILE_AS_VIEWED_MUTATION = `mutation($pullRequestId: ID!, $path: String!) {
+  markFileAsViewed(input: {path: $path, pullRequestId: $pullRequestId}) {
+    clientMutationId
+  }
+}`;
+
+const UNMARK_FILE_AS_VIEWED_MUTATION = `mutation($pullRequestId: ID!, $path: String!) {
+  unmarkFileAsViewed(input: {path: $path, pullRequestId: $pullRequestId}) {
+    clientMutationId
+  }
+}`;
+
+/**
+ * Node ids for pull requests seen this session. The viewed mutations address a
+ * pull request by node id rather than by number, and the id is immutable, so a
+ * review that toggles dozens of files pays for the lookup once.
+ *
+ * @type {Map<string, string>}
+ */
+const pullRequestNodeIds = new Map();
+
+/** @param {PullRequestReference} pullRequest */
+const getPullRequestNodeIdKey = (pullRequest) =>
+  `${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number}`;
+
+/**
+ * Read which files the signed-in reviewer has already marked viewed on GitHub.
+ *
+ * A failure degrades to "nothing viewed on GitHub" rather than failing the
+ * review: the local viewed cache still applies, and the next toggle re-syncs.
+ *
+ * @param {string} repoRoot
+ * @param {PullRequestReference} pullRequest
+ * @returns {Promise<Array<string>>}
+ */
+const readPullRequestViewedState = async (repoRoot, pullRequest) => {
+  /** @type {Array<string>} */
+  const viewedPaths = [];
+  try {
+    /** @type {string | undefined} */
+    let cursor;
+    let hasNextPage = true;
+    while (hasNextPage) {
+      const response = JSON.parse(
+        await ghApi(repoRoot, [
+          'graphql',
+          '-f',
+          `query=${PULL_REQUEST_VIEWED_STATE_QUERY}`,
+          '-f',
+          `owner=${pullRequest.owner}`,
+          '-f',
+          `repo=${pullRequest.repo}`,
+          '-F',
+          `number=${pullRequest.number}`,
+          ...(cursor ? ['-f', `cursor=${cursor}`] : []),
+        ]),
+      );
+      const node = response?.data?.repository?.pullRequest;
+      if (!node?.files) {
+        break;
+      }
+      if (node.id) {
+        pullRequestNodeIds.set(getPullRequestNodeIdKey(pullRequest), node.id);
+      }
+      for (const file of node.files.nodes ?? []) {
+        if (file?.path && file.viewerViewedState === 'VIEWED') {
+          viewedPaths.push(file.path);
+        }
+      }
+      cursor = node.files.pageInfo?.endCursor ?? undefined;
+      hasNextPage = Boolean(node.files.pageInfo?.hasNextPage && cursor);
+    }
+  } catch {
+    return viewedPaths;
+  }
+  return viewedPaths;
+};
+
+/**
+ * @param {string} repoRoot
+ * @param {PullRequestReference} pullRequest
+ * @returns {Promise<string>}
+ */
+const resolvePullRequestNodeId = async (repoRoot, pullRequest) => {
+  const cached = pullRequestNodeIds.get(getPullRequestNodeIdKey(pullRequest));
+  if (cached) {
+    return cached;
+  }
+
+  const metadata = JSON.parse(
+    await ghApi(repoRoot, [
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}`,
+      '--jq',
+      '{node_id}',
+    ]),
+  );
+  if (!metadata?.node_id) {
+    throw new Error(`Could not resolve pull request ${getPullRequestNodeIdKey(pullRequest)}.`);
+  }
+  pullRequestNodeIds.set(getPullRequestNodeIdKey(pullRequest), metadata.node_id);
+  return metadata.node_id;
+};
+
+/**
+ * Push one file's viewed flag to GitHub. Codiff also tracks viewed state per
+ * walkthrough block, which GitHub has no representation for, so callers only
+ * send whole-file transitions.
+ *
+ * @param {string} launchPath
+ * @param {{path: string; source: Extract<ReviewSource, {type: 'pull-request'}>; viewed: boolean}} request
+ * @returns {Promise<void>}
+ */
+const setPullRequestFileViewed = async (launchPath, { path, source, viewed }) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(source.url);
+  const pullRequestId = await resolvePullRequestNodeId(repoRoot, pullRequest);
+  await ghApi(repoRoot, [
+    'graphql',
+    '-f',
+    `query=${viewed ? MARK_FILE_AS_VIEWED_MUTATION : UNMARK_FILE_AS_VIEWED_MUTATION}`,
+    '-f',
+    `pullRequestId=${pullRequestId}`,
+    '-f',
+    `path=${path}`,
+  ]);
+};
+
 const RESOLVED_REVIEW_THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -863,12 +1013,13 @@ const readPullRequestState = async (launchPath, source) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
   const pullRequest = parseGitHubPullRequestUrl(source.url);
 
-  const [metadata, apiFiles, diff, reviewComments, viewerLogin] = await Promise.all([
+  const [metadata, apiFiles, diff, reviewComments, viewerLogin, viewedPaths] = await Promise.all([
     readPullRequestMetadata(repoRoot, pullRequest),
     readPullRequestFiles(repoRoot, pullRequest),
     readPullRequestDiff(repoRoot, pullRequest),
     readPullRequestComments(repoRoot, pullRequest),
     readGitHubViewerLogin(repoRoot),
+    readPullRequestViewedState(repoRoot, pullRequest),
   ]);
   const remote = await selectPullRequestRemote(repoRoot, pullRequest, metadata.head?.sha);
   const diffByPath = splitPullRequestDiff(diff);
@@ -944,6 +1095,7 @@ const readPullRequestState = async (launchPath, source) => {
     reviewComments,
     root: repoRoot,
     source: createPullRequestSource(pullRequest, metadata),
+    viewedPaths,
     ...(viewerLogin ? { viewerLogin } : {}),
   };
 };
@@ -1139,8 +1291,10 @@ module.exports = {
   normalizePullRequestComment,
   parseGitHubPullRequestUrl,
   readPullRequestImageContent,
+  readPullRequestViewedState,
   readPullRequestState,
   resolvePullRequestContentRefs,
+  setPullRequestFileViewed,
   selectPullRequestRemote,
   selectUnresolvedReviewComments,
   submitPullRequestComment,

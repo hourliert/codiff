@@ -249,6 +249,12 @@ export type RepositoryState = {
   reviewComments?: ReadonlyArray<PullRequestExistingReviewComment>;
   root: string;
   source: ReviewSource;
+  /**
+   * Files the signed-in reviewer has marked viewed on the host. GitHub tracks
+   * this per file only, so it seeds whole-file marks and the local store keeps
+   * the finer per-block state Codiff adds on top.
+   */
+  viewedPaths?: ReadonlyArray<string>;
   /** Signed-in GitHub account, so posted comments can be attributed. */
   viewerLogin?: string;
 };
@@ -857,6 +863,17 @@ export type PullRequestGeneralCommentThread = {
 };
 
 export type PullRequestReviewEvent = 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
+
+/**
+ * One whole-file viewed transition, pushed to the review host as it happens.
+ * Codiff's own per-block viewed marks have no host representation, so they stay
+ * local and only a file's aggregate state travels.
+ */
+export type SetFileViewedRequest = {
+  path: string;
+  source: Extract<ReviewSource, { type: 'pull-request' }>;
+  viewed: boolean;
+};
 
 export type SubmitPullRequestCommentRequest = {
   comment: PullRequestReviewComment;

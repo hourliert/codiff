@@ -107,7 +107,7 @@ import {
   supportsLazyDiffContent,
   usesViewedFileState,
 } from './lib/source.ts';
-import { readViewed, writeViewed } from './lib/viewed.ts';
+import { getViewedFileDelta, mergeHostViewed, readViewed, writeViewed } from './lib/viewed.ts';
 import type {
   ChangedFile,
   AgentSkillStatus,
@@ -160,6 +160,15 @@ const getCollapsedViewedPaths = (
   new Set(
     files.filter((file) => viewedFiles[file.path] === file.fingerprint).map((file) => file.path),
   );
+
+/**
+ * Seed viewed state for a freshly loaded review: whatever the host already knows
+ * about, layered over the finer per-block marks kept locally.
+ */
+const readHydratedViewed = (state: RepositoryState) =>
+  usesViewedFileState(state.source)
+    ? mergeHostViewed(state.files, readViewed(state.root, state.source), state.viewedPaths)
+    : {};
 
 const getReloadSourceForLaunch = (
   reloadSelection: ReturnType<typeof consumeReloadSelection>,
@@ -228,12 +237,33 @@ export default function App() {
   const stateGenerationRef = useRef(0);
   const markdownRefreshQueueRef = useRef<Promise<void>>(Promise.resolve());
   const viewedRef = useRef<Record<string, string>>({});
-  const persistViewed = useCallback((nextViewed: Record<string, string>) => {
-    const currentState = stateRef.current;
-    if (currentState && usesViewedFileState(currentState.source)) {
-      writeViewed(currentState.root, nextViewed);
-    }
-  }, []);
+  const persistViewed = useCallback(
+    (nextViewed: Record<string, string>, previousViewed: Record<string, string>) => {
+      const currentState = stateRef.current;
+      if (!currentState || !usesViewedFileState(currentState.source)) {
+        return;
+      }
+
+      writeViewed(currentState.root, nextViewed, currentState.source);
+      const { source } = currentState;
+      if (source.type !== 'pull-request') {
+        return;
+      }
+
+      // Push each whole-file transition as it happens, the same way comments
+      // post immediately. A failure leaves the host un-synced; the next reload
+      // hydrates from the host and the file reappears as unviewed, which is the
+      // honest outcome rather than a local mark the host never received.
+      for (const { path, viewed } of getViewedFileDelta(
+        currentState.files,
+        previousViewed,
+        nextViewed,
+      )) {
+        void window.codiff.setFileViewed({ path, source, viewed }).catch(() => {});
+      }
+    },
+    [],
+  );
   const {
     bumpItemVersion,
     collapsed,
@@ -743,9 +773,7 @@ export default function App() {
 
       setWalkthroughLoading(false);
 
-      const nextViewed = usesViewedFileState(orderedState.source)
-        ? readViewed(orderedState.root)
-        : {};
+      const nextViewed = readHydratedViewed(orderedState);
       // Reopen the commit view after a reload, but only while it would still be
       // openable (same conditions as openCommitView); e.g. once the commit
       // lands the working tree may be empty and we fall back to the review.
@@ -1062,9 +1090,7 @@ export default function App() {
             orderedState.files.some((file) => file.path === selectedPathRef.current)
               ? selectedPathRef.current
               : (orderedState.files[0]?.path ?? null);
-          const nextViewed = usesViewedFileState(orderedState.source)
-            ? readViewed(orderedState.root)
-            : {};
+          const nextViewed = readHydratedViewed(orderedState);
           const walkthroughNeedsRefresh = haveChangedFiles(currentState.files, orderedState.files);
 
           stateRef.current = orderedState;
@@ -1448,9 +1474,7 @@ export default function App() {
             files: sortFiles(nextState.files),
           };
           const session = sourceSessionsRef.current.get(getSourceKey(orderedState.source));
-          const nextViewed =
-            session?.viewed ??
-            (usesViewedFileState(orderedState.source) ? readViewed(orderedState.root) : {});
+          const nextViewed = session?.viewed ?? readHydratedViewed(orderedState);
           const nextSelectedPath =
             session?.selectedPath &&
             orderedState.files.some((file) => file.path === session.selectedPath)

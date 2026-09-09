@@ -26,6 +26,7 @@ import type {
   ReviewSource,
   SaveMarkdownDocumentRequest,
   SaveMarkdownDocumentResult,
+  SetFileViewedRequest,
   SharePlanResult,
   SharedWalkthroughSnapshot,
   ShareWalkthroughResult,
@@ -111,6 +112,7 @@ declare global {
       ) => Promise<SaveMarkdownDocumentResult>;
       savePlanReview: (review: PlanReview) => Promise<PlanReview>;
       setDiffStyle: (value: CodiffPreferences['diffStyle']) => Promise<void>;
+      setFileViewed: (request: SetFileViewedRequest) => Promise<void>;
       setShowOutdated: (value: boolean) => Promise<void>;
       setWordWrap: (value: boolean) => Promise<void>;
       sharePlan: (review: PlanReview) => Promise<SharePlanResult>;

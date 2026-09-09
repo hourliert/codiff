@@ -34,6 +34,7 @@ const {
   readPullRequestState,
   resolvePullRequestContentRefs,
   selectUnresolvedReviewComments,
+  setPullRequestFileViewed,
   submitPullRequestComment,
   submitPullRequestReview,
 } = require('./git-state/pull-request.cjs');
@@ -251,6 +252,10 @@ module.exports = {
   readWalkthroughRepositoryState,
   readWorkingTreeState,
   resolvePullRequestContentRefs,
+  setFileViewed: (launchPath, request) =>
+    isGitLabReviewSource(request.source)
+      ? Promise.resolve()
+      : setPullRequestFileViewed(launchPath, request),
   submitPullRequestComment: (launchPath, request) =>
     (isGitLabReviewSource(request.source) ? submitMergeRequestComment : submitPullRequestComment)(
       launchPath,
