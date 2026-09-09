@@ -20,6 +20,63 @@
   text-wrap: pretty;
 }
 
+.wt-toc-reading {
+  align-items: center;
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px;
+}
+.wt-toc-progress {
+  color: var(--muted);
+  font: 600 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wt-toc-filter {
+  background: color-mix(in srgb, var(--sidebar-text) 8%, transparent);
+  border-radius: 5px;
+  display: flex;
+  flex: none;
+  gap: 1px;
+  padding: 1px;
+}
+.wt-toc-filter-option {
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font: 600 10px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+.wt-toc-filter-option:hover {
+  color: var(--text);
+}
+.wt-toc-filter-option.active {
+  background: var(--sidebar-bg, var(--bg));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+  color: var(--text);
+}
+.wt-toc-hidden {
+  background: none;
+  border: 1px dashed var(--sidebar-border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font: 600 11px/1 var(--font-sans);
+  padding: 8px;
+  text-align: center;
+  width: 100%;
+}
+.wt-toc-hidden:hover {
+  border-color: var(--wt-toc-rail, var(--sidebar-border));
+  color: var(--text);
+}
+
 .wt-toc-scroll {
   --wt-toc-node-bg: color-mix(in srgb, var(--sidebar-text) 6%, transparent);
   --wt-toc-node-size: 13px;

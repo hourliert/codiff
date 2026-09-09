@@ -69,6 +69,11 @@ export function useAppWalkthrough({
     state?.files ?? emptyFiles,
     navigationResetKey,
   );
+  const narrativeNavigationRef = useRef(narrativeNavigation);
+
+  useEffect(() => {
+    narrativeNavigationRef.current = narrativeNavigation;
+  }, [narrativeNavigation]);
 
   useEffect(() => {
     mainModeRef.current = mainMode;
@@ -341,6 +346,7 @@ export function useAppWalkthrough({
     enabledShareWalkthrough: shareWalkthroughEnabled ? shareWalkthrough : undefined,
     mainModeRef,
     narrativeNavigation,
+    narrativeNavigationRef,
     narrativeWalkthrough,
     narrativeWalkthroughRef,
     openCommitView,

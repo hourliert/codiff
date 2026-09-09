@@ -71,6 +71,7 @@ import {
   shouldPreloadSectionContentsForSearch,
 } from './lib/diff.ts';
 import { sortFiles, splitRepositoryPath } from './lib/files.ts';
+import { isWalkthroughStopViewed } from './lib/narrative-walkthrough.ts';
 import {
   consumeReloadSelection,
   getChangedPaths,
@@ -107,7 +108,13 @@ import {
   supportsLazyDiffContent,
   usesViewedFileState,
 } from './lib/source.ts';
-import { getViewedFileDelta, mergeHostViewed, readViewed, writeViewed } from './lib/viewed.ts';
+import {
+  applyAutoViewed,
+  getViewedFileDelta,
+  mergeHostViewed,
+  readViewed,
+  writeViewed,
+} from './lib/viewed.ts';
 import type {
   ChangedFile,
   AgentSkillStatus,
@@ -160,15 +167,6 @@ const getCollapsedViewedPaths = (
   new Set(
     files.filter((file) => viewedFiles[file.path] === file.fingerprint).map((file) => file.path),
   );
-
-/**
- * Seed viewed state for a freshly loaded review: whatever the host already knows
- * about, layered over the finer per-block marks kept locally.
- */
-const readHydratedViewed = (state: RepositoryState) =>
-  usesViewedFileState(state.source)
-    ? mergeHostViewed(state.files, readViewed(state.root, state.source), state.viewedPaths)
-    : {};
 
 const getReloadSourceForLaunch = (
   reloadSelection: ReturnType<typeof consumeReloadSelection>,
@@ -264,6 +262,67 @@ export default function App() {
     },
     [],
   );
+  // Marking files viewed because they matched a config rule is a bulk write the
+  // reviewer never clicked, so it is confirmed once before it can reach the host.
+  const syncAutoViewed = useCallback(
+    async (
+      state: RepositoryState,
+      previousViewed: Record<string, string>,
+      nextViewed: Record<string, string>,
+    ) => {
+      const { source } = state;
+      if (source.type !== 'pull-request') {
+        return;
+      }
+
+      const marked = getViewedFileDelta(state.files, previousViewed, nextViewed).filter(
+        ({ viewed }) => viewed,
+      );
+      if (marked.length === 0) {
+        return;
+      }
+
+      const confirmed = await window.codiff.confirmAutoViewedSync(marked.length).catch(() => false);
+      if (!confirmed) {
+        return;
+      }
+
+      for (const { path } of marked) {
+        void window.codiff.setFileViewed({ path, source, viewed: true }).catch(() => {});
+      }
+    },
+    [],
+  );
+  /**
+   * Seed viewed state for a freshly loaded review: whatever the host already
+   * knows about, layered over the finer per-block marks kept locally, with the
+   * reviewer's auto-viewed rules filling in the rest.
+   */
+  const readHydratedViewed = useCallback(
+    (state: RepositoryState) => {
+      if (!usesViewedFileState(state.source)) {
+        return {};
+      }
+
+      const hostMerged = mergeHostViewed(
+        state.files,
+        readViewed(state.root, state.source),
+        state.viewedPaths,
+      );
+      const { applied, viewed } = applyAutoViewed(
+        state.files,
+        hostMerged,
+        preferencesRef.current.autoViewedPatterns,
+        state.source,
+      );
+      if (applied) {
+        writeViewed(state.root, viewed, state.source);
+        void syncAutoViewed(state, hostMerged, viewed);
+      }
+      return viewed;
+    },
+    [syncAutoViewed],
+  );
   const {
     bumpItemVersion,
     collapsed,
@@ -331,6 +390,7 @@ export default function App() {
     enabledShareWalkthrough,
     mainModeRef,
     narrativeNavigation,
+    narrativeNavigationRef,
     narrativeWalkthrough,
     narrativeWalkthroughRef,
     openCommitView,
@@ -825,6 +885,7 @@ export default function App() {
       canceled = true;
     };
   }, [
+    readHydratedViewed,
     resetCommentFocus,
     scrollPathIntoReview,
     setCollapsed,
@@ -1120,6 +1181,7 @@ export default function App() {
       removeConfigListener();
     };
   }, [
+    readHydratedViewed,
     setCollapsed,
     setExpandedReviewKeys,
     setItemVersionByKey,
@@ -1129,6 +1191,38 @@ export default function App() {
     setSelectedPath,
     setViewed,
   ]);
+
+  // Each stop auto-advances at most once, so navigating back to something
+  // already read stays where the reviewer put it.
+  const autoAdvancedStopIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (sidebarMode !== 'walkthrough') {
+      return;
+    }
+
+    const navigation = narrativeNavigationRef.current;
+    const view = navigation.walkthroughView;
+    if (!view || navigation.mode !== 'stop') {
+      return;
+    }
+
+    const stop = view.sequence[navigation.index];
+    const files = stateRef.current?.files;
+    if (!stop || !files || autoAdvancedStopIdsRef.current.has(stop.id)) {
+      return;
+    }
+
+    // Finishing the stop you are reading moves you on. The walkthrough's Next
+    // button stays where it is, so a long walkthrough is clicked through rather
+    // than scrolled through.
+    if (
+      navigation.index < view.sequence.length - 1 &&
+      isWalkthroughStopViewed(stop, files, viewed)
+    ) {
+      autoAdvancedStopIdsRef.current.add(stop.id);
+      navigation.goNext();
+    }
+  }, [narrativeNavigationRef, sidebarMode, viewed]);
 
   useDocumentAppearance({
     cleanupCodeFontProperties: true,
@@ -1529,6 +1623,7 @@ export default function App() {
     [
       historySource,
       pendingSource,
+      readHydratedViewed,
       refreshWalkthroughForState,
       resetCommentFocus,
       resetDiffSearch,

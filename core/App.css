@@ -1400,15 +1400,39 @@ html[data-codiff-platform='darwin'] .sidebar {
   color: var(--sidebar-text);
 }
 
-.file-tree-shell,
-.file-tree {
+.file-tree-shell {
+  display: flex;
   flex: 1;
-  display: block;
+  flex-direction: column;
   min-height: 0;
 }
 
 .file-tree {
+  flex: 1;
+  display: block;
+  min-height: 0;
   height: 100%;
+}
+
+.file-tree-viewed-filter {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--sidebar-border);
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  font: 600 11px/1 var(--font-sans);
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.file-tree-viewed-filter:hover {
+  color: var(--text);
+}
+
+.file-tree-viewed-filter.active {
+  color: var(--text);
 }
 
 .history-list {

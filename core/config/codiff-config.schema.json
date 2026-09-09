@@ -20,6 +20,18 @@
           "default": "codex",
           "description": "Which agent CLI powers review assistance and walkthroughs. 'codex' uses the OpenAI Codex CLI; 'claude' uses the Claude Code CLI; 'opencode' uses the OpenCode CLI; 'pi' uses the Pi CLI."
         },
+        "autoViewedPatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Paths that need no review attention of their own, as gitignore-flavoured globs (for example \"**/*.test.ts\" or \"**/__tests__/**\"). Supports **, *, ?, a leading / to anchor at the repository root, a trailing / for a directory, and a leading ! to re-include something an earlier pattern swept up; later patterns win. Matching files start marked viewed, and the walkthrough is told to keep them off the main path unless a test contradicts the code it covers. Applies to every repository."
+        },
+        "autoViewedSync": {
+          "type": "string",
+          "enum": ["ask", "always", "never"],
+          "default": "ask",
+          "description": "Whether files marked viewed by autoViewedPatterns are pushed to the review host alongside the ones you mark yourself. 'ask' prompts the first time it would write, then records your answer here."
+        },
         "checkForUpdates": {
           "type": "boolean",
           "default": true,

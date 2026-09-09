@@ -785,6 +785,7 @@ export type CodiffTheme = 'system' | 'light' | 'dark';
 
 export type CodiffPreferences = {
   agentBackend: 'codex' | 'claude' | 'opencode' | 'pi';
+  autoViewedPatterns: ReadonlyArray<string>;
   claudeModel: string;
   codeFontFamily: string;
   codeFontSize: number;

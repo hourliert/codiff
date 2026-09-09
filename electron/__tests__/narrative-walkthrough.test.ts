@@ -20,6 +20,7 @@ const {
     agentLabel?: string,
     customPrompt?: string,
     previousWalkthrough?: unknown,
+    autoViewedPatterns?: ReadonlyArray<string>,
   ) => string;
   getNarrativeWalkthroughCacheKey: (
     state: any,
@@ -27,6 +28,7 @@ const {
     model: unknown,
     context?: unknown,
     customPrompt?: string,
+    autoViewedPatterns?: ReadonlyArray<string>,
   ) => string;
   narrativeWalkthroughSchema: {
     properties: Record<string, any>;
@@ -319,6 +321,71 @@ test('scales walkthrough timeouts passed to the agent', async () => {
   expect(largeTimeout).toBeLessThan(900_000);
   expect(await readTimeout(300, 90_000)).toBe(900_000);
   expect(await readTimeout(4, 180_000)).toBe(180_000);
+});
+
+const autoViewedState = () => ({
+  branch: 'main',
+  files: [
+    { path: 'src/app.ts', status: 'modified' },
+    { path: 'src/app.test.ts', status: 'modified' },
+  ].map((file) => ({
+    ...file,
+    sections: [
+      {
+        id: `${file.path}:staged`,
+        kind: 'staged',
+        patch: `@@ -1 +1 @@\n-old\n+new\n`,
+      },
+    ],
+  })),
+  generatedAt: 1,
+  root: '/repo',
+  source: { type: 'working-tree' },
+});
+
+test('the digest marks the paths a reviewer ruled off the main path', () => {
+  const prompt = buildNarrativeWalkthroughPrompt(
+    autoViewedState(),
+    undefined,
+    'Claude',
+    undefined,
+    undefined,
+    ['**/*.test.ts'],
+  );
+  const digest = JSON.parse(prompt.slice(prompt.indexOf('{"branch"')));
+
+  // Carried per file, the same way generated files already are, so the model is
+  // never asked to do glob matching of its own.
+  expect(digest.files.find((file: any) => file.path === 'src/app.test.ts').autoViewed).toBe(true);
+  expect(digest.files.find((file: any) => file.path === 'src/app.ts').autoViewed).toBe(undefined);
+  expect(prompt).toContain('Files with "autoViewed": true');
+  // The rule keeps the one escape hatch that outranks a reviewer's policy.
+  expect(prompt).toContain('contradicts the code it covers');
+});
+
+test('the auto-viewed rule is absent when nothing matched', () => {
+  expect(buildNarrativeWalkthroughPrompt(autoViewedState())).not.toContain('"autoViewed"');
+  expect(
+    buildNarrativeWalkthroughPrompt(autoViewedState(), undefined, 'Claude', undefined, undefined, [
+      '**/*.rs',
+    ]),
+  ).not.toContain('"autoViewed"');
+});
+
+test('changing the patterns invalidates the cached walkthrough on its own', () => {
+  const agent = { id: 'claude', label: 'Claude', normalizeModel: (model: unknown) => model };
+  const key = (patterns: ReadonlyArray<string>) =>
+    getNarrativeWalkthroughCacheKey(
+      autoViewedState(),
+      agent,
+      'claude-opus-5',
+      undefined,
+      undefined,
+      patterns,
+    );
+
+  expect(key(['**/*.test.ts'])).not.toBe(key([]));
+  expect(key(['**/*.test.ts'])).toBe(key(['**/*.test.ts']));
 });
 
 test('prompts generated walkthroughs to use deterministic hunk groups', () => {

@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type MouseEvent,
   type RefObject,
 } from 'react';
@@ -36,18 +37,34 @@ export function ReviewFileTree({
   viewed?: Readonly<Record<string, string>>;
 }) {
   const treeHostRef = useRef<HTMLDivElement>(null);
-  const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const [hideViewed, setHideViewed] = useState(false);
+  const viewedCount = useMemo(
+    () => files.filter((file) => viewed[file.path] === file.fingerprint).length,
+    [files, viewed],
+  );
+  // The selected file stays listed even once it is viewed, so marking the file
+  // you are reading does not make it vanish from under you.
+  const visibleFiles = useMemo(
+    () =>
+      hideViewed
+        ? files.filter(
+            (file) => viewed[file.path] !== file.fingerprint || file.path === selectedPath,
+          )
+        : files,
+    [files, hideViewed, selectedPath, viewed],
+  );
+  const paths = useMemo(() => visibleFiles.map((file) => file.path), [visibleFiles]);
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const lineCountsByPath = useMemo(
-    () => new Map(files.map((file) => [file.path, getDiffLineCount(file, showWhitespace)])),
-    [files, showWhitespace],
+    () => new Map(visibleFiles.map((file) => [file.path, getDiffLineCount(file, showWhitespace)])),
+    [showWhitespace, visibleFiles],
   );
   const lineCountsByPathRef = useRef(lineCountsByPath);
   const reloadDeltaGitStatusCSS = useMemo(
     () => getReloadDeltaGitStatusCSS(reloadDeltaPaths),
     [reloadDeltaPaths],
   );
-  const viewedRowCSS = useMemo(() => getViewedRowCSS(files, viewed), [files, viewed]);
+  const viewedRowCSS = useMemo(() => getViewedRowCSS(visibleFiles, viewed), [viewed, visibleFiles]);
   const renderTreeRowDecoration = useCallback<FileTreeRowDecorationRenderer>(({ item }) => {
     const lineCount = lineCountsByPathRef.current.get(item.path);
     return lineCount?.countable
@@ -59,11 +76,11 @@ export function ReviewFileTree({
   }, []);
   const status = useMemo(
     () =>
-      files.map((file) => ({
+      visibleFiles.map((file) => ({
         path: file.path,
         status: statusForTree[file.status],
       })),
-    [files],
+    [visibleFiles],
   );
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
@@ -183,6 +200,18 @@ export function ReviewFileTree({
 
   return (
     <div className="file-tree-shell" ref={treeHostRef}>
+      {viewedCount > 0 ? (
+        <button
+          aria-pressed={hideViewed}
+          className={`file-tree-viewed-filter${hideViewed ? ' active' : ''}`}
+          onClick={() => setHideViewed((current) => !current)}
+          type="button"
+        >
+          {hideViewed
+            ? `Showing what is left · ${viewedCount} viewed hidden`
+            : `Hide ${viewedCount} viewed`}
+        </button>
+      ) : null}
       <PierreFileTree className="file-tree" model={model} onClick={handleTreeClick} />
     </div>
   );

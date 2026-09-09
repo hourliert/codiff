@@ -88,6 +88,35 @@ test('electron config normalizes sidebar position', () => {
   ).toBe('left');
 });
 
+test('electron config keeps only usable auto-viewed patterns', () => {
+  expect(readElectronConfig({}).settings.autoViewedPatterns).toEqual([]);
+  expect(
+    readElectronConfig({ settings: { autoViewedPatterns: ['**/*.test.ts', '!src/a.test.ts'] } })
+      .settings.autoViewedPatterns,
+  ).toEqual(['**/*.test.ts', '!src/a.test.ts']);
+  // One unusable entry must not cost a reviewer the rest of their patterns.
+  expect(
+    readElectronConfig({ settings: { autoViewedPatterns: ['**/*.snap', '', 7, null] } }).settings
+      .autoViewedPatterns,
+  ).toEqual(['**/*.snap']);
+  expect(
+    readElectronConfig({ settings: { autoViewedPatterns: '**/*.snap' } }).settings
+      .autoViewedPatterns,
+  ).toEqual([]);
+});
+
+test('electron config records only answers the auto-viewed prompt can produce', () => {
+  expect(readElectronConfig({}).settings.autoViewedSync).toBe('ask');
+  for (const value of ['always', 'never', 'ask']) {
+    expect(
+      readElectronConfig({ settings: { autoViewedSync: value } }).settings.autoViewedSync,
+    ).toBe(value);
+  }
+  expect(readElectronConfig({ settings: { autoViewedSync: 'yes' } }).settings.autoViewedSync).toBe(
+    'ask',
+  );
+});
+
 test('electron config keeps custom walkthrough prompt text only when it is a string', () => {
   expect(
     readElectronConfig({

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildWalkthroughView,
+  countWalkthroughStopsByImportance,
   getCommitSelectionPaths,
+  type WalkthroughImportanceFilter,
 } from '../../../lib/narrative-walkthrough.ts';
 import type { ChangedFile, NarrativeWalkthrough } from '../../../types.ts';
 
@@ -21,8 +23,14 @@ export const useNarrativeNavigation = (
   files: ReadonlyArray<ChangedFile>,
   resetKey = '',
 ) => {
+  const [importanceFilter, setImportanceFilterState] = useState<WalkthroughImportanceFilter>('all');
   const walkthroughView = useMemo(
-    () => (walkthrough ? buildWalkthroughView(walkthrough) : null),
+    () => (walkthrough ? buildWalkthroughView(walkthrough, importanceFilter) : null),
+    [importanceFilter, walkthrough],
+  );
+  const stopCounts = useMemo(
+    () =>
+      walkthrough ? countWalkthroughStopsByImportance(walkthrough) : { critical: 0, total: 0 },
     [walkthrough],
   );
   const commitPaths = useMemo(
@@ -178,6 +186,36 @@ export const useNarrativeNavigation = (
   const goNext = useCallback(() => goStop(index + 1), [goStop, index]);
   const goPrev = useCallback(() => goStop(index - 1), [goStop, index]);
 
+  /**
+   * Changing the filter renumbers the sequence, so hold the reviewer's place by
+   * stop id rather than by position. When the stop they were on is one the new
+   * filter hides, land on the next stop that survives instead of resetting to
+   * the top of the walkthrough.
+   */
+  const setImportanceFilter = useCallback(
+    (next: WalkthroughImportanceFilter) => {
+      const currentStopId = walkthroughView?.sequence[index]?.id;
+      const nextView = walkthrough ? buildWalkthroughView(walkthrough, next) : null;
+      setImportanceFilterState(next);
+      if (!nextView || mode !== 'stop') {
+        return;
+      }
+
+      const exact = nextView.sequence.findIndex((stop) => stop.id === currentStopId);
+      const following = walkthroughView
+        ? walkthroughView.sequence
+            .slice(index)
+            .map((stop) => nextView.sequence.findIndex((candidate) => candidate.id === stop.id))
+            .find((candidate) => candidate >= 0)
+        : undefined;
+      const target = exact >= 0 ? exact : (following ?? 0);
+      setIndex(target);
+      markVisited(nextView.sequence[target]?.id);
+      setScrollTarget((current) => ({ index: target, kind: 'stop', nonce: current.nonce + 1 }));
+    },
+    [index, markVisited, mode, walkthrough, walkthroughView],
+  );
+
   const syncIndexFromScroll = useCallback(
     (target: number) => {
       if (!walkthroughView) {
@@ -284,6 +322,7 @@ export const useNarrativeNavigation = (
     goNext,
     goPrev,
     goStop,
+    importanceFilter,
     index,
     mode,
     openSupport,
@@ -291,6 +330,8 @@ export const useNarrativeNavigation = (
     scrollTarget,
     setCommitBody,
     setCommitSubject,
+    setImportanceFilter,
+    stopCounts,
     supportVisited,
     syncIndexFromScroll,
     syncSupportFromScroll,

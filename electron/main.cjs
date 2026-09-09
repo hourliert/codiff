@@ -464,6 +464,19 @@ const resetCodeFontSize = () => {
   setCodeFontSize(13);
 };
 
+/**
+ * Persist a settings answer the reviewer gave through a dialog rather than by
+ * editing the config file. Kept narrow on purpose: it writes the file the
+ * reviewer owns, so it only ever carries the key that was asked about.
+ *
+ * @param {Partial<import('../core/config/types.ts').CodiffSettings>} settings
+ */
+const updateConfigSettings = (settings) => {
+  config = { ...config, settings: { ...config.settings, ...settings } };
+  writeConfig(config);
+  sendConfigChanged();
+};
+
 /** @param {string} repositoryPath */
 const rememberLastRepositoryPath = (repositoryPath) => {
   if (config.settings.lastRepositoryPath === repositoryPath) {
@@ -1658,12 +1671,14 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
     const agentOptions = getAgentOptions(agent);
     const walkthroughModel = resolveNarrativeWalkthroughModel(state, agent, agentOptions.model);
     const walkthroughPrompt = config.settings.walkthroughPrompt;
+    const autoViewedPatterns = config.settings.autoViewedPatterns;
     const cacheKey = getNarrativeWalkthroughCacheKey(
       state,
       agent,
       walkthroughModel,
       walkthroughContext,
       walkthroughPrompt,
+      autoViewedPatterns,
     );
     if (!options?.force) {
       const cachedWalkthrough = readStoredWalkthrough(cacheKey);
@@ -1701,6 +1716,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       walkthroughContext,
       walkthroughPrompt,
       options?.previousWalkthrough,
+      autoViewedPatterns,
     );
     if (result.status === 'ready') {
       const generatedCacheKey = getNarrativeWalkthroughCacheKey(
@@ -1709,6 +1725,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
         generatedModel,
         walkthroughContext,
         walkthroughPrompt,
+        autoViewedPatterns,
       );
       try {
         const cacheableWalkthrough = { ...result.walkthrough };
@@ -1800,6 +1817,37 @@ ipcMain.handle('codiff:updateWalkthroughCommitMessage', async (event, request) =
   );
   const agent = resolveWindowAgent(event.sender.id);
   return readCommitMessageReply(state, request, agent, getAgentOptions(agent));
+});
+
+ipcMain.handle('codiff:confirmAutoViewedSync', async (event, count) => {
+  if (config.settings.autoViewedSync === 'always') {
+    return true;
+  }
+  if (config.settings.autoViewedSync === 'never') {
+    return false;
+  }
+
+  const files = count === 1 ? '1 file' : `${count} files`;
+  const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const options = {
+    buttons: ['Mark on GitHub', 'Keep local only'],
+    cancelId: 1,
+    checkboxChecked: true,
+    checkboxLabel: 'Remember this choice',
+    defaultId: 0,
+    detail:
+      'They matched autoViewedPatterns, so Codiff collapsed them without you opening them. Marking them on GitHub keeps the pull request page and Codiff in agreement.',
+    message: `Mark ${files} as viewed on GitHub?`,
+    type: 'question',
+  };
+  const { checkboxChecked, response } = await (window
+    ? dialog.showMessageBox(window, options)
+    : dialog.showMessageBox(options));
+  const confirmed = response === 0;
+  if (checkboxChecked) {
+    updateConfigSettings({ autoViewedSync: confirmed ? 'always' : 'never' });
+  }
+  return confirmed;
 });
 
 ipcMain.handle('codiff:setFileViewed', async (event, request) => {

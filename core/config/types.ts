@@ -2,8 +2,12 @@ export type CodiffDiffStyle = 'split' | 'unified';
 export type CodiffTheme = 'system' | 'light' | 'dark';
 export type CodiffAgentBackend = 'codex' | 'claude' | 'opencode' | 'pi';
 
+export type CodiffAutoViewedSync = 'ask' | 'always' | 'never';
+
 export type CodiffSettings = {
   agentBackend: CodiffAgentBackend;
+  autoViewedPatterns: ReadonlyArray<string>;
+  autoViewedSync: CodiffAutoViewedSync;
   checkForUpdates: boolean;
   claudeEffort: string;
   claudeModel: string;
