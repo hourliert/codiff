@@ -5,9 +5,11 @@ export type CodiffAgentBackend = 'codex' | 'claude' | 'opencode' | 'pi';
 export type CodiffSettings = {
   agentBackend: CodiffAgentBackend;
   checkForUpdates: boolean;
+  claudeEffort: string;
   claudeModel: string;
   codeFontFamily: string;
   codeFontSize: number;
+  codexEffort: string;
   copyCommentsOnClose: boolean;
   diffStyle: CodiffDiffStyle;
   editorCommand: string;

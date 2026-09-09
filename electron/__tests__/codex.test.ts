@@ -141,7 +141,7 @@ test('runs Codex walkthroughs as fresh ephemeral repository-scoped calls', async
   expect(calls[0].args).toContain('--json');
   expect(calls[0].args).toContain('--cd');
   expect(calls[0].args).toContain('/repo');
-  expect(calls[0].args).toContain('model_reasoning_effort="low"');
+  expect(calls[0].args).toContain('model_reasoning_effort="medium"');
   expect(calls[0].args).not.toContain('resume');
 });
 
@@ -174,8 +174,8 @@ test('retries unavailable GPT-5.6 models with model-specific reasoning', async (
 
   expect(attempts).toEqual([
     'gpt-5.6-sol|model_reasoning_effort="medium"',
-    'gpt-5.6-terra|model_reasoning_effort="low"',
-    'gpt-5.5|model_reasoning_effort="low"',
+    'gpt-5.6-terra|model_reasoning_effort="medium"',
+    'gpt-5.5|model_reasoning_effort="medium"',
   ]);
   expect(fallbacks).toEqual([['gpt-5.5', 'gpt-5.6-sol']]);
 });
@@ -300,7 +300,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   expect(turnStart.params).toMatchObject({
     approvalPolicy: 'never',
     cwd: directory.path,
-    effort: 'low',
+    effort: 'medium',
     outputSchema: {},
     sandboxPolicy: {
       networkAccess: false,
@@ -381,7 +381,7 @@ test('forwards per-call Codex reasoning effort overrides', async () => {
   await expect(
     runCodex('/repo', 'prompt', {}, 'walkthrough.json', 'Timed out.', {
       commandTransport: transport,
-      reasoningEffort: 'low',
+      effort: 'low',
     }),
   ).resolves.toBe('{"version":1}');
 

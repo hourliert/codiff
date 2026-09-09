@@ -2,8 +2,10 @@
   "settings": {
     "agentBackend": "codex",
     "checkForUpdates": true,
+    "claudeEffort": "medium",
     "claudeModel": "claude-sonnet-5",
     "codeFontFamily": "",
+    "codexEffort": "medium",
     "codeFontSize": 13,
     "copyCommentsOnClose": false,
     "diffStyle": "split",

@@ -412,6 +412,7 @@ const selectAgentModel = (agent, model) => {
 
 /** @param {import('./agent.cjs').Agent} agent */
 const getAgentOptions = (agent) => ({
+  ...(agent.effortSettingKey ? { effort: config.settings[agent.effortSettingKey] } : {}),
   fallbackModel: agent.fallbackModel,
   model: config.settings[agent.modelSettingKey],
   /** @param {string} fallbackModel */

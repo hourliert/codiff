@@ -152,6 +152,33 @@ test('maps Claude thinking and text deltas to semantic walkthrough progress', as
   expect(calls[0].args).toContain('--include-partial-messages');
 });
 
+test('forwards the configured Claude effort, defaulting to medium', async () => {
+  const run = async (effort?: string) => {
+    const { calls, transport } = createCommandTransport(({ close, stdin, stdout }) => {
+      stdin.on('finish', () => {
+        stdout(JSON.stringify({ structured_output: { version: 1 }, type: 'result' }));
+        close();
+      });
+    });
+
+    await expect(
+      runClaude('/repo', 'prompt', { type: 'object' }, 'walkthrough.json', 'Timed out.', {
+        commandTransport: transport,
+        ...(effort === undefined ? {} : { effort }),
+      }),
+    ).resolves.toBe('{"version":1}');
+
+    const args = calls[0].args;
+    return args[args.indexOf('--effort') + 1];
+  };
+
+  expect(await run()).toBe('medium');
+  expect(await run('max')).toBe('max');
+  // Codex tops out at 'high', so a shared config value it cannot express must
+  // degrade to the default rather than reach the CLI.
+  expect(await run('nonsense')).toBe('medium');
+});
+
 test('maps Claude structured output deltas to response progress', async () => {
   const events = [
     {

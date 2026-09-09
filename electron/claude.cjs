@@ -18,6 +18,9 @@ const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
 // Walkthrough prompts are budgeted against a 1M-token window, so a 200k-window
 // model like Haiku 4.5 would not degrade here — it would hard-fail on context.
 const FALLBACK_CLAUDE_MODEL = 'claude-sonnet-5';
+const CLAUDE_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+const CLAUDE_EFFORT_IDS = new Set(CLAUDE_EFFORTS);
+const DEFAULT_CLAUDE_EFFORT = 'medium';
 const CLAUDE_NOT_FOUND_CODE = 'CLAUDE_NOT_FOUND';
 const CLAUDE_NOT_FOUND_MESSAGE =
   'Claude Code CLI was not found. Install Claude Code and verify `claude --version` works in Terminal. Codiff searches PATH, ~/.local/bin/claude, /opt/homebrew/bin/claude, and /usr/local/bin/claude. If Claude Code is installed somewhere else, launch Codiff with `CODIFF_CLAUDE_PATH=/absolute/path/to/claude codiff -w`.';
@@ -26,6 +29,7 @@ const CLAUDE_NOT_LOGGED_IN_MESSAGE =
 
 /**
  * @typedef {{
+ *   effort?: string;
  *   fallbackModel?: string;
  *   commandTransport?: import('./agent-command.cjs').AgentCommandTransport;
  *   model?: string;
@@ -64,6 +68,10 @@ const CLAUDE_MODELS = Object.freeze([
   },
 ]);
 const CLAUDE_MODEL_IDS = new Set(CLAUDE_MODELS.map((model) => model.id));
+
+/** @param {unknown} value */
+const normalizeClaudeEffort = (value) =>
+  typeof value === 'string' && CLAUDE_EFFORT_IDS.has(value) ? value : DEFAULT_CLAUDE_EFFORT;
 
 /** @param {string} [detail] */
 const createClaudeNotFoundError = (detail) =>
@@ -270,6 +278,8 @@ const runClaude = async (
           JSON.stringify(schema),
           '--model',
           claudeModel,
+          '--effort',
+          normalizeClaudeEffort(options.effort),
           '--add-dir',
           repoRoot,
           '--permission-mode',
@@ -381,7 +391,10 @@ const runClaude = async (
 module.exports = {
   CLAUDE_MODELS,
   CLAUDE_NOT_FOUND_CODE,
+  CLAUDE_EFFORTS,
   CLAUDE_TIMEOUT_MS,
+  DEFAULT_CLAUDE_EFFORT,
+  normalizeClaudeEffort,
   DEFAULT_CLAUDE_MODEL,
   FALLBACK_CLAUDE_MODEL,
   getClaudeCommand,
