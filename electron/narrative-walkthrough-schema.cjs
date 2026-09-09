@@ -15,7 +15,8 @@ const CHANGE_TYPES = new Set([
   'docs',
 ]);
 
-const MAX_WALKTHROUGH_CHAPTERS = 6;
+const MAX_WALKTHROUGH_CHAPTERS = 10;
+// Per chapter, not per walkthrough: this is `maxItems` on a chapter's stops[].
 const MAX_WALKTHROUGH_STOPS = 14;
 const MAX_HUNKS_PER_WALKTHROUGH_GROUP = 14;
 

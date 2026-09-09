@@ -2,7 +2,7 @@
   "settings": {
     "agentBackend": "codex",
     "checkForUpdates": true,
-    "claudeModel": "claude-sonnet-4-6",
+    "claudeModel": "claude-sonnet-5",
     "codeFontFamily": "",
     "codeFontSize": 13,
     "copyCommentsOnClose": false,
