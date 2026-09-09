@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { PassThrough } from 'node:stream';
@@ -48,6 +49,9 @@ const {
   ) => Promise<string>;
 };
 
+const PULL_REQUEST_HEAD_REF = 'refs/codiff/pull-requests/7/head';
+const PULL_REQUEST_BASE_REF = 'refs/codiff/pull-requests/7/base';
+
 const request = {
   identifier: 'formatGreeting',
   kind: 'unstaged',
@@ -95,6 +99,69 @@ test('marks historical snapshot candidates as unsafe for editor fallback', async
       canOpenInEditor: false,
       path: 'src/greeting.ts',
     });
+  }
+});
+
+test('a pull request head is reachable in an editor, its base side is not', async () => {
+  await using directory = await createTemporaryDirectory('codiff-definitions-pull-request-');
+  createDefinitionNavigationRepository(directory.path);
+  execFileSync('git', ['-C', directory.path, 'update-ref', PULL_REQUEST_HEAD_REF, 'HEAD']);
+  execFileSync('git', ['-C', directory.path, 'update-ref', PULL_REQUEST_BASE_REF, 'HEAD']);
+  const headSha = execFileSync('git', ['-C', directory.path, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim();
+  const source = {
+    headSha,
+    number: 7,
+    provider: 'github',
+    type: 'pull-request',
+    url: 'https://github.com/nkzw-tech/codiff/pull/7',
+  } satisfies DefinitionSearchRequest['source'];
+
+  // Codiff can check the head commit out on demand, so a definition found there
+  // is reachable in an editor even though it is not the working tree.
+  const additions = await findDefinitions(directory.path, {
+    ...request,
+    kind: 'commit',
+    source,
+  });
+  expect(additions.status).toBe('ready');
+  if (additions.status === 'ready') {
+    expect(additions.candidates[0]).toMatchObject({ canOpenInEditor: true });
+  }
+
+  // The base side resolves to a merge base, which has no on-disk form.
+  const deletions = await findDefinitions(directory.path, {
+    ...request,
+    kind: 'commit',
+    side: 'deletions',
+    source,
+  });
+  expect(deletions.status).toBe('ready');
+  if (deletions.status === 'ready') {
+    expect(deletions.candidates[0]).toMatchObject({ canOpenInEditor: false });
+  }
+});
+
+test('a pull request without a resolved head commit stays unopenable', async () => {
+  await using directory = await createTemporaryDirectory('codiff-definitions-pull-request-head-');
+  createDefinitionNavigationRepository(directory.path);
+  execFileSync('git', ['-C', directory.path, 'update-ref', PULL_REQUEST_HEAD_REF, 'HEAD']);
+
+  const result = await findDefinitions(directory.path, {
+    ...request,
+    kind: 'commit',
+    source: {
+      number: 7,
+      provider: 'github',
+      type: 'pull-request',
+      url: 'https://github.com/nkzw-tech/codiff/pull/7',
+    },
+  });
+
+  expect(result.status).toBe('ready');
+  if (result.status === 'ready') {
+    expect(result.candidates[0]).toMatchObject({ canOpenInEditor: false });
   }
 });
 

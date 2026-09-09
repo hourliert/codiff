@@ -82,6 +82,7 @@ const {
 const { createSkillInstaller } = require('./main/agent-skill.cjs');
 const { createEditorOpener } = require('./main/editor.cjs');
 const { createDefinitionSearchCoordinator } = require('./definition-search.cjs');
+const { resolveReviewContentRoot } = require('./review-worktree.cjs');
 const { createTerminalHelper } = require('./main/terminal-helper.cjs');
 const {
   readWindowState,
@@ -232,6 +233,20 @@ const getWindowRepositoryRoot = (webContentsId) =>
   windowIdentities.get(webContentsId)?.repositoryRoot ||
   windowRepositories.get(webContentsId) ||
   getLaunchPath();
+
+/**
+ * Where the files the review is showing actually live. For a pull request that
+ * is a detached checkout of its head commit rather than the reviewer's own
+ * working tree, which holds a different revision of the same paths.
+ *
+ * @param {number} webContentsId
+ * @returns {Promise<string | undefined>}
+ */
+const getWindowReviewContentRoot = (webContentsId) =>
+  resolveReviewContentRoot(
+    getWindowRepositoryRoot(webContentsId),
+    windowLaunchOptions.get(webContentsId)?.source,
+  );
 
 /** @param {number} webContentsId */
 const getMarkdownDocumentContext = (webContentsId) => ({
@@ -1882,24 +1897,26 @@ ipcMain.handle('codiff:findDefinitions', (event, request) =>
 ipcMain.handle('codiff:openFile', async (event, filePath, lineNumber) => {
   const repositoryRoot = getWindowRepositoryRoot(event.sender.id);
   const repositoryFilePath = validateRepositoryPath(filePath);
-  const absolutePath = resolve(repositoryRoot, repositoryFilePath);
+  const contentRoot = await getWindowReviewContentRoot(event.sender.id);
+  const absolutePath = contentRoot ? resolve(contentRoot, repositoryFilePath) : undefined;
 
-  if (existsSync(absolutePath)) {
+  if (absolutePath && existsSync(absolutePath)) {
     await openFileInEditor(absolutePath, {
       lineNumber: Number.isSafeInteger(lineNumber) && lineNumber > 0 ? lineNumber : undefined,
-      repoPath: repositoryRoot,
+      repoPath: contentRoot,
     });
   } else {
     await shell.openPath(repositoryRoot);
   }
 });
 
-ipcMain.handle('codiff:showInFolder', (event, filePath) => {
+ipcMain.handle('codiff:showInFolder', async (event, filePath) => {
   const repositoryRoot = getWindowRepositoryRoot(event.sender.id);
   const repositoryFilePath = validateRepositoryPath(filePath);
-  const absolutePath = resolve(repositoryRoot, repositoryFilePath);
+  const contentRoot = await getWindowReviewContentRoot(event.sender.id);
+  const absolutePath = contentRoot ? resolve(contentRoot, repositoryFilePath) : undefined;
 
-  if (existsSync(absolutePath)) {
+  if (absolutePath && existsSync(absolutePath)) {
     shell.showItemInFolder(absolutePath);
   } else {
     void shell.openPath(repositoryRoot);
