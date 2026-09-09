@@ -19,7 +19,10 @@ const CODEX_TIMEOUT_MS = 90_000;
 const DEFAULT_OPENAI_MODEL = 'gpt-5.6-terra';
 const FALLBACK_OPENAI_MODEL = 'gpt-5.5';
 const LEGACY_OPENAI_MODEL = 'gpt-5.3-codex-spark';
-const CODEX_REASONING_EFFORT = 'low';
+// Codex tops out at 'high' while Claude goes further, so each backend
+// normalizes the configured effort against its own set: a value one backend
+// cannot express degrades to its default instead of erroring.
+const CODEX_REASONING_EFFORT = 'medium';
 const CODEX_MACOS_BLOCKED_MESSAGE =
   'macOS blocked the local Codex CLI. Update Codex CLI from the official OpenAI release, then run `codex --version` and try again.';
 const CODEX_NOT_FOUND_CODE = 'CODEX_NOT_FOUND';
@@ -43,7 +46,7 @@ const CODEX_NOT_FOUND_MESSAGE =
  *   }) => void;
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
  *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
- *   reasoningEffort?: 'low' | 'medium' | 'high';
+ *   effort?: string;
  *   timeoutMs?: number;
  * }} CodexOptions
  */
@@ -77,7 +80,8 @@ const OPENAI_MODELS = Object.freeze([
   },
 ]);
 const OPENAI_MODEL_IDS = new Set(OPENAI_MODELS.map((model) => model.id));
-const CODEX_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+const CODEX_EFFORTS = Object.freeze(['low', 'medium', 'high']);
+const CODEX_REASONING_EFFORTS = new Set(CODEX_EFFORTS);
 const OPENAI_MODEL_REASONING_EFFORTS = new Map([
   ['gpt-5.6-sol', 'medium'],
   ['gpt-5.6-luna', 'medium'],
@@ -382,7 +386,7 @@ const runCodex = async (
 
   /** @param {string} codexModel @returns {Promise<string>} */
   const invokeCodexExec = async (codexModel) => {
-    const reasoningEffort = getOpenAIModelReasoningEffort(codexModel, options.reasoningEffort);
+    const reasoningEffort = getOpenAIModelReasoningEffort(codexModel, options.effort);
     const directory = await fs.mkdtemp(join(tmpdir(), 'codiff-codex-'));
     const outputPath = join(directory, outputName);
     const schemaPath = join(directory, 'schema.json');
@@ -501,7 +505,7 @@ const runCodex = async (
    * @returns {Promise<string>}
    */
   const invokeCodexAppServer = async (codexModel) => {
-    const reasoningEffort = getOpenAIModelReasoningEffort(codexModel, options.reasoningEffort);
+    const reasoningEffort = getOpenAIModelReasoningEffort(codexModel, options.effort);
     const environment = await getCommandEnvironment();
     return new Promise((resolve, reject) => {
       const commandTransport = resolveAgentCommandTransport(
@@ -816,6 +820,7 @@ const runCodex = async (
 
 module.exports = {
   CODEX_NOT_FOUND_CODE,
+  CODEX_EFFORTS,
   CODEX_TIMEOUT_MS,
   cleanText,
   DEFAULT_OPENAI_MODEL,

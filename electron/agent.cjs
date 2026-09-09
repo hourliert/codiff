@@ -27,7 +27,7 @@ const { readPiSessionContext } = require('./pi-session-context.cjs');
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
  *   onPartialText?: (delta: string) => void;
  *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
- *   reasoningEffort?: 'low' | 'medium' | 'high';
+ *   effort?: string;
  *   timeoutMs?: number;
  * }} AgentOptions
  * @typedef {{
@@ -40,6 +40,8 @@ const { readPiSessionContext } = require('./pi-session-context.cjs');
  *   defaultModel: string;
  *   fallbackModel: string;
  *   modelSettingKey: 'openAIModel' | 'claudeModel' | 'opencodeModel' | 'piModel';
+ *   effortSettingKey?: 'claudeEffort' | 'codexEffort';
+ *   efforts?: ReadonlyArray<string>;
  *   normalizeModel: (value: unknown) => string;
  *   notFoundCode: string;
  *   isAvailable: () => boolean;
@@ -85,6 +87,8 @@ const createCodexAgent = () => ({
   cliName: 'codex',
   cliPathEnvVar: 'CODIFF_CODEX_PATH',
   defaultTimeoutMs: codex.CODEX_TIMEOUT_MS,
+  effortSettingKey: 'codexEffort',
+  efforts: codex.CODEX_EFFORTS,
   models: codex.OPENAI_MODELS,
   defaultModel: codex.DEFAULT_OPENAI_MODEL,
   fallbackModel: codex.FALLBACK_OPENAI_MODEL,
@@ -105,6 +109,8 @@ const createClaudeAgent = () => ({
   cliName: 'claude',
   cliPathEnvVar: 'CODIFF_CLAUDE_PATH',
   defaultTimeoutMs: claude.CLAUDE_TIMEOUT_MS,
+  effortSettingKey: 'claudeEffort',
+  efforts: claude.CLAUDE_EFFORTS,
   models: claude.CLAUDE_MODELS,
   defaultModel: claude.DEFAULT_CLAUDE_MODEL,
   fallbackModel: claude.FALLBACK_CLAUDE_MODEL,

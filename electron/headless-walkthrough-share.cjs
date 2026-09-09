@@ -252,6 +252,7 @@ const generateAndShareWalkthrough = async ({
     state,
     agent,
     {
+      ...(agent.effortSettingKey ? { effort: config.settings[agent.effortSettingKey] } : {}),
       fallbackModel: agent.fallbackModel,
       model: config.settings[agent.modelSettingKey],
       onModelFallback: async (fallbackModel) => {
