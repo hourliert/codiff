@@ -3,6 +3,9 @@ import { expect, test } from 'vite-plus/test';
 import narrativeSchemaJson from '../../core/walkthrough/narrative-walkthrough.schema.json' with { type: 'json' };
 
 const require = createRequire(import.meta.url);
+const { MAX_WALKTHROUGH_STOPS } = require('../narrative-walkthrough-schema.cjs') as {
+  MAX_WALKTHROUGH_STOPS: number;
+};
 const {
   buildNarrativeWalkthroughPrompt,
   getNarrativeWalkthroughCacheKey,
@@ -338,13 +341,13 @@ test('prompts generated walkthroughs to use deterministic hunk groups', () => {
   });
 
   expect(prompt).toContain('digest has 28 files');
-  expect(prompt).toContain('main-path stops in total across all chapters');
+  expect(prompt).toContain('Write one stop per distinct review idea');
   expect(prompt).toContain('Define chapters[] in display order');
   expect(prompt).toContain('Default to one review idea per stop');
   expect(prompt).toContain('Every patch hunk contains its own bounded patch excerpt');
   expect(prompt).toContain('Every stop must have a concise semantic title');
   expect(prompt).toContain('Never use a filename or path as a stop title');
-  expect(prompt).toContain('A stop may contain at most 14 hunkIds');
+  expect(prompt).toContain('A stop may contain up to 14 hunkIds');
   expect(prompt).toContain('Use multiple hunkIds when the prose needs those hunks read together');
   expect(prompt).toContain('A Git hunk boundary is not a walkthrough boundary');
   expect(prompt).toContain(
@@ -982,6 +985,109 @@ test('repository digest exposes synthetic hunk ids for metadata-only renames', (
 
   expect(prompt).toContain('"id":"h1"');
   expect(prompt).toContain('"kind":"synthetic"');
+});
+
+test('keeps every chapter when the stop cap is reached, instead of truncating', () => {
+  // The stop limit is `maxItems` on ONE chapter's stops[]. Counting it across
+  // the whole walkthrough silently dropped every chapter after the total was
+  // reached, and those chapters' hunks then fell through to the support sweep —
+  // which is how a large PR lost its last themes to a 90-file support blob.
+  const chapterCount = 3;
+  const stopsPerChapter = 6;
+  const total = chapterCount * stopsPerChapter;
+  const capFiles = Array.from({ length: total }, (_, index) => ({
+    path: `src/file-${index}.ts`,
+    sections: [
+      {
+        id: `src/file-${index}.ts:staged`,
+        kind: 'staged',
+        patch: '@@ -1 +1 @@\n-before\n+after\n',
+      },
+    ],
+    status: 'modified',
+  }));
+  const hunkId = (index: number) => `src/file-${index}.ts:staged:h1`;
+  const input = {
+    chapters: Array.from({ length: chapterCount }, (_, chapter) => ({
+      blurb: `Chapter ${chapter} blurb.`,
+      icon: 'path',
+      id: `c${chapter}`,
+      stops: Array.from({ length: stopsPerChapter }, (_, stop) => {
+        const index = chapter * stopsPerChapter + stop;
+        return {
+          hunkIds: [hunkId(index)],
+          id: `c${chapter}s${stop}`,
+          importance: 'normal',
+          prose: `Explanation for stop ${index}.`,
+          title: `Stop ${index}`,
+        };
+      }),
+      title: `Ch${chapter}`,
+    })),
+    focus: 'Cover every chapter.',
+    kind: 'narrative',
+    title: 'Cap behaviour',
+    version: 4,
+  };
+
+  const result = normalizeNarrativeWalkthrough(input, capFiles, {
+    agent: 'claude',
+    source: { type: 'working-tree' },
+  });
+
+  expect(result.chapters).toHaveLength(chapterCount);
+  expect(result.chapters.map((chapter: any) => chapter.stops.length)).toEqual([
+    stopsPerChapter,
+    stopsPerChapter,
+    stopsPerChapter,
+  ]);
+  // Nothing was pushed into support by truncation.
+  expect(result.support).toHaveLength(0);
+  expect(result.meta).toBe(`${total} stops · ${chapterCount} chapters`);
+});
+
+test('still caps stops within a single chapter', () => {
+  const over = MAX_WALKTHROUGH_STOPS + 4;
+  const capFiles = Array.from({ length: over }, (_, index) => ({
+    path: `src/one-${index}.ts`,
+    sections: [
+      {
+        id: `src/one-${index}.ts:staged`,
+        kind: 'staged',
+        patch: '@@ -1 +1 @@\n-before\n+after\n',
+      },
+    ],
+    status: 'modified',
+  }));
+  const result = normalizeNarrativeWalkthrough(
+    {
+      chapters: [
+        {
+          blurb: 'One overfull chapter.',
+          icon: 'path',
+          id: 'c0',
+          stops: Array.from({ length: over }, (_, index) => ({
+            hunkIds: [`src/one-${index}.ts:staged:h1`],
+            id: `s${index}`,
+            importance: 'normal',
+            prose: `Explanation ${index}.`,
+            title: `Stop ${index}`,
+          })),
+          title: 'Solo',
+        },
+      ],
+      focus: 'Overfull chapter.',
+      kind: 'narrative',
+      title: 'Cap behaviour',
+      version: 4,
+    },
+    capFiles,
+    { agent: 'claude', source: { type: 'working-tree' } },
+  );
+
+  expect(result.chapters[0].stops).toHaveLength(MAX_WALKTHROUGH_STOPS);
+  // The overflow is swept into support rather than vanishing.
+  expect(result.support.flatMap((group: any) => group.hunkIds)).toHaveLength(4);
 });
 
 test('normalizes a well-formed narrative walkthrough', () => {
