@@ -285,7 +285,17 @@ const runBoundedGitGrep = (
     });
   });
 
-/** @param {DefinitionSearchRequest} request @param {string} repoPath */
+/**
+ * Which snapshot to search, and whether Codiff can put that snapshot on disk.
+ *
+ * `materialized` answers the second question. The working tree is trivially on
+ * disk; a pull request's head is not, but Codiff can check it out on demand, so
+ * a definition found there is reachable in an editor too. Every other revision —
+ * a commit, a range, the base side of any comparison — has no on-disk form, and
+ * offering to open it would open a different revision of that file.
+ *
+ * @param {DefinitionSearchRequest} request @param {string} repoPath
+ */
 const resolveSearchRevision = async (request, repoPath) => {
   const { kind, side, source } = request;
   if (kind === 'staged')
@@ -299,6 +309,7 @@ const resolveSearchRevision = async (request, repoPath) => {
 
   let head = null;
   let base = null;
+  let materialized = false;
   let mergeBase = false;
   if (source.type === 'commit') {
     head = source.ref;
@@ -321,10 +332,13 @@ const resolveSearchRevision = async (request, repoPath) => {
     head = `refs/codiff/${namespace}/${source.number}/head`;
     base = `refs/codiff/${namespace}/${source.number}/base`;
     mergeBase = true;
+    // A GitLab merge request never reaches the worktree path, and a pull
+    // request whose head commit is unknown cannot be pinned to one.
+    materialized = source.provider !== 'gitlab' && Boolean(source.headSha);
   }
 
   if (!head) return { cached: false, revision: null };
-  if (side === 'additions') return { cached: false, revision: head };
+  if (side === 'additions') return { cached: false, materialized, revision: head };
   if (mergeBase && base) {
     const resolved = (await gitOrEmpty(repoPath, ['merge-base', base, head])).trim();
     return { cached: false, revision: resolved || base };
@@ -387,7 +401,8 @@ const findDefinitions = async (repoPath, request, options = {}) => {
       if (!seen.has(key)) {
         seen.add(key);
         unique.push({
-          canOpenInEditor: snapshot.revision == null && !snapshot.cached,
+          canOpenInEditor:
+            (snapshot.revision == null && !snapshot.cached) || snapshot.materialized === true,
           kind: candidate.kind,
           line: candidate.line.trim(),
           lineNumber: candidate.lineNumber,
