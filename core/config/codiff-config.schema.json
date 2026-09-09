@@ -27,9 +27,9 @@
         },
         "claudeEffort": {
           "type": "string",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
-          "default": "medium",
-          "description": "How hard Claude Code thinks about review assistance and walkthroughs when agentBackend is 'claude'. Higher levels produce better grouping on large diffs and take longer; a walkthrough that times out at 'max' may complete at 'high'."
+          "enum": ["", "low", "medium", "high", "xhigh", "max"],
+          "default": "",
+          "description": "How hard Claude Code thinks about review assistance and walkthroughs when agentBackend is 'claude'. Leave empty to inherit whatever Claude Code itself is configured to use, including the effortLevel and per-model overrides in ~/.claude/settings.json. Setting a value here overrides those. Higher levels produce better grouping on large diffs and take longer; a walkthrough that times out at 'max' may complete at 'high'."
         },
         "claudeModel": {
           "type": "string",

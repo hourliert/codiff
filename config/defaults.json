@@ -2,7 +2,7 @@
   "settings": {
     "agentBackend": "codex",
     "checkForUpdates": true,
-    "claudeEffort": "medium",
+    "claudeEffort": "",
     "claudeModel": "claude-sonnet-5",
     "codeFontFamily": "",
     "codexEffort": "medium",
