@@ -120,6 +120,11 @@ type GitStateModule = {
     pullRequest: { number: number; owner: string; repo: string; url: string },
     metadata: { base?: { ref?: string; sha?: string }; head?: { ref?: string; sha?: string } },
   ) => Promise<{ base: string; head: string } | null>;
+  selectResolvedReviewCommentAnchors: (
+    comments: ReadonlyArray<Record<string, unknown>>,
+    resolvedCommentIds: ReadonlySet<number>,
+    viewerLogin?: string,
+  ) => Array<{ filePath: string; lineNumber: number }>;
   selectUnresolvedReviewComments: (
     comments: ReadonlyArray<Record<string, unknown>>,
     resolvedCommentIds: ReadonlySet<number>,
@@ -164,6 +169,7 @@ const {
   readWalkthroughRepositoryState,
   readWorkingTreeState,
   resolvePullRequestContentRefs,
+  selectResolvedReviewCommentAnchors,
   selectUnresolvedReviewComments,
   submitPullRequestComment,
   toGitHubCommentId,
@@ -918,6 +924,31 @@ test('toGitHubCommentId strips the host prefix and refuses anything else', () =>
   expect(toGitHubCommentId('12345')).toBe('12345');
   expect(() => toGitHubCommentId('gitlab:12345')).toThrow(/without a GitHub id/u);
   expect(() => toGitHubCommentId('github:abc')).toThrow(/without a GitHub id/u);
+});
+
+test('resolved threads come back as anchors and never as comments', () => {
+  const comments = [
+    {
+      body: 'Fixed now.',
+      id: 1,
+      line: 12,
+      path: 'src/settings.ts',
+      user: { login: 'hourliert' },
+    },
+    { body: 'Still open.', id: 2, line: 20, path: 'src/settings.ts', user: { login: 'hourliert' } },
+    // Someone else's resolved thread is not a place this reviewer moved past.
+    { body: 'Theirs.', id: 3, line: 30, path: 'src/settings.ts', user: { login: 'someone' } },
+  ];
+  const resolved = new Set([1, 3]);
+
+  expect(selectResolvedReviewCommentAnchors(comments, resolved, 'hourliert')).toEqual([
+    { filePath: 'src/settings.ts', lineNumber: 12 },
+  ]);
+  // The resolved comment must not reach the diff, and so must not reach the
+  // markdown export that is built from the same list.
+  expect(selectUnresolvedReviewComments(comments, resolved, 'hourliert')).toMatchObject([
+    { body: 'Still open.' },
+  ]);
 });
 
 test('collectResolvedReviewCommentIds gathers comment ids from resolved threads only', () => {

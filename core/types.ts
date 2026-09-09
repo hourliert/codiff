@@ -252,6 +252,12 @@ export type RepositoryState = {
   generalComments?: ReadonlyArray<PullRequestGeneralCommentThread>;
   generatedAt: number;
   launchPath: string;
+  /**
+   * Where conversations the reviewer already resolved sat. Positions only:
+   * the comments themselves are settled and deliberately absent, so nothing
+   * resolved reaches the diff or the markdown handed to the agent.
+   */
+  resolvedCommentAnchors?: ReadonlyArray<ReviewCommentAnchor>;
   reviewComments?: ReadonlyArray<PullRequestExistingReviewComment>;
   root: string;
   source: ReviewSource;
@@ -602,6 +608,18 @@ export type WalkthroughCommit = {
   title?: string;
 };
 
+/**
+ * What a previous review round of the same pull request looked at, so the
+ * walkthrough can say which files have moved since. Absent unless a stored
+ * round exists, its head is still resolvable locally, and something changed.
+ */
+export type WalkthroughPreviousRound = {
+  changedPaths: ReadonlyArray<string>;
+  /** The head that round reviewed. */
+  headSha: string;
+  reviewedAt: number;
+};
+
 export type NarrativeWalkthrough = {
   agent: 'codex' | 'claude' | 'opencode' | 'pi';
   chapters: ReadonlyArray<WalkthroughChapter>;
@@ -619,6 +637,8 @@ export type NarrativeWalkthrough = {
   kind: 'narrative';
   /** Display string, e.g. '6 stops · 4 chapters'. */
   meta?: string;
+  /** Set by the host, never by the agent. */
+  previousRound?: WalkthroughPreviousRound;
   repo: {
     branch: string | null;
     root: string;
@@ -891,6 +911,11 @@ export type SetFileViewedRequest = {
   path: string;
   source: Extract<ReviewSource, { type: 'pull-request' }>;
   viewed: boolean;
+};
+
+export type ReviewCommentAnchor = {
+  filePath: string;
+  lineNumber: number;
 };
 
 export type SubmitPullRequestCommentRequest = {

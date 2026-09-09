@@ -103,7 +103,12 @@ const {
   readNarrativeWalkthrough,
   resolveNarrativeWalkthroughModel,
 } = require('./narrative-walkthrough.cjs');
-const { readStoredWalkthrough, writeStoredWalkthrough } = require('./walkthrough-store.cjs');
+const { readPreviousRound } = require('./walkthrough-continuity.cjs');
+const {
+  readLatestStoredWalkthrough,
+  readStoredWalkthrough,
+  writeStoredWalkthrough,
+} = require('./walkthrough-store.cjs');
 const { uploadSharedSnapshot } = require('./shared-walkthrough-upload.cjs');
 const {
   resolvePlanShareTarget,
@@ -1914,14 +1919,18 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       walkthroughPrompt,
       autoViewedPatterns,
     );
+    const walkthroughScope = { repoRoot: state.root, source: state.source };
+    const previousRecord = readLatestStoredWalkthrough(walkthroughScope, cacheKey);
+    const previousRound = await readPreviousRound(state.root, state.source, previousRecord);
     if (!options?.force) {
-      const cachedWalkthrough = readStoredWalkthrough(cacheKey);
+      const cachedWalkthrough = readStoredWalkthrough(walkthroughScope, cacheKey);
       if (cachedWalkthrough) {
         return {
           status: 'ready',
           walkthrough: {
             ...cachedWalkthrough,
             ...(walkthroughContext ? { context: walkthroughContext } : {}),
+            ...(previousRound ? { previousRound } : {}),
             agent: agent.id,
             repo: {
               branch: state.branch,
@@ -1932,6 +1941,14 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
         };
       }
     }
+
+    // Continuity has to survive closing the app, which is the normal way a
+    // review of an agent-written pull request spans several rounds. The
+    // renderer only ever knows the walkthrough it is currently holding, so a
+    // cold start falls back to the last round stored for this source. The
+    // lookup sits outside the cache-hit branch above deliberately: a refresh
+    // always forces, and this is continuity input rather than a result.
+    const previousWalkthrough = options?.previousWalkthrough ?? previousRecord?.walkthrough;
 
     let generatedModel = walkthroughModel;
     const onModelFallback = agentOptions.onModelFallback;
@@ -1949,7 +1966,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       },
       walkthroughContext,
       walkthroughPrompt,
-      options?.previousWalkthrough,
+      previousWalkthrough,
       autoViewedPatterns,
     );
     if (result.status === 'ready') {
@@ -1964,10 +1981,18 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       try {
         const cacheableWalkthrough = { ...result.walkthrough };
         delete cacheableWalkthrough.context;
-        writeStoredWalkthrough(generatedCacheKey, cacheableWalkthrough);
+        // Recomputed on every read, so it is never stored: a walkthrough cached
+        // today is compared against whatever the previous round is tomorrow.
+        delete cacheableWalkthrough.previousRound;
+        writeStoredWalkthrough(walkthroughScope, generatedCacheKey, cacheableWalkthrough, {
+          model: generatedModel,
+        });
       } catch {
         // Caching is optional; a filesystem failure must not hide a generated result.
       }
+      return previousRound
+        ? { ...result, walkthrough: { ...result.walkthrough, previousRound } }
+        : result;
     }
     return result;
   } catch (error) {

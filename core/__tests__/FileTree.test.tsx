@@ -60,3 +60,57 @@ test('review file trees share selection, activation, decorations, and row stylin
     ).toBe('true');
   });
 });
+
+test('the file tree can show only what changed since the last review round', async () => {
+  const movedFile = createChangedFile('src/moved.ts');
+  const settledFile = createChangedFile('src/settled.ts');
+  await using view = await renderReact(
+    <ReviewFileTree
+      changedSincePaths={new Set([movedFile.path])}
+      files={[movedFile, settledFile]}
+      onActivatePath={vi.fn()}
+      selectedPath={null}
+      showWhitespace={false}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(
+      view.container.querySelector<HTMLButtonElement>('.file-tree-viewed-filter')?.textContent,
+    ).toBe('Show 1 changed since last review');
+  });
+  // Marked before anything is filtered, so a round that touched one of eighty
+  // files says so without the reviewer opening a thing.
+  const shadowRoot = view.container.querySelector('file-tree-container')?.shadowRoot;
+  expect(shadowRoot?.querySelector('style[data-codiff-changed-since-rows]')?.textContent).toContain(
+    `[data-item-path="${movedFile.path}"]`,
+  );
+
+  await act(async () =>
+    view.container.querySelector<HTMLButtonElement>('.file-tree-viewed-filter')?.click(),
+  );
+  await waitFor(() => {
+    expect(
+      view.container.querySelector<HTMLButtonElement>('.file-tree-viewed-filter')?.textContent,
+    ).toBe('Showing what moved · 1 changed');
+    const rows = view.container.querySelector('file-tree-container')?.shadowRoot;
+    expect(rows?.querySelector(`[data-item-path="${settledFile.path}"]`)).toBeNull();
+    expect(rows?.querySelector(`[data-item-path="${movedFile.path}"]`)).not.toBeNull();
+  });
+});
+
+test('the file tree offers no round filter when nothing moved', async () => {
+  await using view = await renderReact(
+    <ReviewFileTree
+      files={[createChangedFile('src/only.ts')]}
+      onActivatePath={vi.fn()}
+      selectedPath={null}
+      showWhitespace={false}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(view.container.querySelector('file-tree-container')).not.toBeNull();
+  });
+  expect(view.container.querySelector('.file-tree-viewed-filter')).toBeNull();
+});
