@@ -1,5 +1,4 @@
 import type { ChangedFile, ReviewSource } from '../types.ts';
-import { compilePathPatterns, matchesPathPatterns } from './path-patterns.js';
 import { getWalkthroughReviewKeyPrefix } from './review-identity.ts';
 import { getSourceKey } from './source.ts';
 
@@ -112,18 +111,18 @@ const getReviewRevision = (files: ReadonlyArray<ChangedFile>, source?: ReviewSou
 export const applyAutoViewed = (
   files: ReadonlyArray<ChangedFile>,
   viewed: Readonly<Record<string, string>>,
-  patterns: ReadonlyArray<string>,
+  autoViewedPaths: ReadonlyArray<string> | undefined,
   source?: ReviewSource,
 ): { applied: boolean; viewed: Record<string, string> } => {
   const revision = getReviewRevision(files, source);
   const next = { ...viewed };
-  if (patterns.length === 0 || next[AUTO_VIEWED_REVISION_KEY] === revision) {
+  if (!autoViewedPaths?.length || next[AUTO_VIEWED_REVISION_KEY] === revision) {
     return { applied: false, viewed: next };
   }
 
-  const compiled = compilePathPatterns(patterns);
+  const ruledOut = new Set(autoViewedPaths);
   for (const file of files) {
-    if (next[file.path] !== file.fingerprint && matchesPathPatterns(compiled, file.path)) {
+    if (next[file.path] !== file.fingerprint && ruledOut.has(file.path)) {
       next[file.path] = file.fingerprint;
     }
   }
