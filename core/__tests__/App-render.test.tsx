@@ -3696,6 +3696,11 @@ test('walkthrough progress events replace the loading line without exposing agen
   await waitFor(() => {
     expect(container.textContent).toContain('Generating walkthrough…');
   });
+  // The review is usable while the walkthrough is still being generated. Waiting
+  // for it would leave the whole window on the loading line for as long as the
+  // agent runs, which on a large pull request is minutes.
+  expect(container.querySelector('.app-shell')).not.toBeNull();
+  expect(container.querySelector('main.loading')).toBeNull();
   await act(async () => {
     onProgress?.(createWalkthroughProgress('agent-generation'));
   });
