@@ -1,6 +1,6 @@
 import { expect, test } from 'vite-plus/test';
 import { getWalkthroughReviewKeyPrefix } from '../lib/review-identity.ts';
-import { getViewedFileDelta, mergeHostViewed } from '../lib/viewed.ts';
+import { applyAutoViewed, getViewedFileDelta, mergeHostViewed } from '../lib/viewed.ts';
 import type { ChangedFile } from '../types.ts';
 
 const createFile = (path: string, fingerprint: string): ChangedFile => ({
@@ -64,4 +64,71 @@ test('only whole-file transitions are reported to the host', () => {
   // A stale fingerprint was never viewed for this revision, so clearing it is
   // not a transition the host needs to hear about.
   expect(getViewedFileDelta(files, { 'a.ts': 'stale' }, {})).toEqual([]);
+});
+
+const pullRequestSource = (headSha: string) =>
+  ({ headSha, number: 7, type: 'pull-request', url: 'https://x/pull/7' }) as const;
+
+test('auto-viewed collapses matching files and leaves the rest alone', () => {
+  const { applied, viewed } = applyAutoViewed(
+    [createFile('a.test.ts', 'fp-a'), createFile('b.ts', 'fp-b')],
+    {},
+    ['**/*.test.ts'],
+    pullRequestSource('sha-1'),
+  );
+
+  expect(applied).toBe(true);
+  expect(viewed['a.test.ts']).toBe('fp-a');
+  expect(viewed['b.ts']).toBe(undefined);
+});
+
+test('a file un-viewed by hand is not re-collapsed on the next load', () => {
+  const files = [createFile('a.test.ts', 'fp-a')];
+  const first = applyAutoViewed(files, {}, ['**/*.test.ts'], pullRequestSource('sha-1'));
+  // The reviewer opens the file to actually read it.
+  const reopened = { ...first.viewed };
+  delete reopened['a.test.ts'];
+
+  const second = applyAutoViewed(files, reopened, ['**/*.test.ts'], pullRequestSource('sha-1'));
+  expect(second.applied).toBe(false);
+  expect(second.viewed['a.test.ts']).toBe(undefined);
+});
+
+test('a new push re-applies the patterns, so files it adds collapse too', () => {
+  const before = applyAutoViewed(
+    [createFile('a.test.ts', 'fp-a')],
+    {},
+    ['**/*.test.ts'],
+    pullRequestSource('sha-1'),
+  );
+  const after = applyAutoViewed(
+    [createFile('a.test.ts', 'fp-a2'), createFile('c.test.ts', 'fp-c')],
+    before.viewed,
+    ['**/*.test.ts'],
+    pullRequestSource('sha-2'),
+  );
+
+  expect(after.applied).toBe(true);
+  expect(after.viewed['c.test.ts']).toBe('fp-c');
+});
+
+test('no patterns means no bookkeeping and no marks', () => {
+  const { applied, viewed } = applyAutoViewed(
+    [createFile('a.test.ts', 'fp-a')],
+    {},
+    [],
+    pullRequestSource('sha-1'),
+  );
+
+  expect(applied).toBe(false);
+  expect(viewed).toEqual({});
+});
+
+test('auto-viewed marks read back as ordinary whole-file transitions', () => {
+  const files = [createFile('a.test.ts', 'fp-a'), createFile('b.ts', 'fp-b')];
+  const { viewed } = applyAutoViewed(files, {}, ['**/*.test.ts'], pullRequestSource('sha-1'));
+
+  // This is what decides the confirmation count and what reaches the host, so
+  // the bookkeeping key must not leak into it.
+  expect(getViewedFileDelta(files, {}, viewed)).toEqual([{ path: 'a.test.ts', viewed: true }]);
 });

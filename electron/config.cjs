@@ -156,6 +156,27 @@ const normalizeDiffStyle = (diffStyle) =>
 /** @param {unknown} position @returns {'left' | 'right'} */
 const normalizeSidebarPosition = (position) => (position === 'right' ? 'right' : 'left');
 
+/**
+ * Drops anything that is not a non-empty string rather than rejecting the whole
+ * list, so one bad entry cannot cost a reviewer every pattern they wrote.
+ *
+ * @param {unknown} patterns
+ * @param {ReadonlyArray<string>} fallback
+ * @returns {Array<string>}
+ */
+const normalizeAutoViewedPatterns = (patterns, fallback) =>
+  Array.isArray(patterns)
+    ? patterns.filter((pattern) => typeof pattern === 'string' && pattern.trim() !== '')
+    : [...fallback];
+
+/** @param {unknown} value @param {string} fallback @returns {'ask' | 'always' | 'never'} */
+const normalizeAutoViewedSync = (value, fallback) =>
+  value === 'ask' || value === 'always' || value === 'never'
+    ? value
+    : fallback === 'always' || fallback === 'never'
+      ? fallback
+      : 'ask';
+
 /** @param {unknown} backend @returns {'codex' | 'claude' | 'opencode' | 'pi'} */
 const normalizeAgentBackend = (backend) =>
   backend === 'codex' || backend === 'claude' || backend === 'opencode' || backend === 'pi'
@@ -283,6 +304,14 @@ const mergeConfig = (raw) => {
         typeof rawSettings.checkForUpdates === 'boolean'
           ? rawSettings.checkForUpdates
           : defaults.settings.checkForUpdates,
+      autoViewedPatterns: normalizeAutoViewedPatterns(
+        rawSettings.autoViewedPatterns,
+        defaults.settings.autoViewedPatterns,
+      ),
+      autoViewedSync: normalizeAutoViewedSync(
+        rawSettings.autoViewedSync,
+        defaults.settings.autoViewedSync,
+      ),
       claudeEffort:
         typeof rawSettings.claudeEffort === 'string'
           ? rawSettings.claudeEffort
@@ -489,6 +518,8 @@ const configToPreferences = (config) => ({
 
 module.exports = {
   configToPreferences,
+  normalizeAutoViewedPatterns,
+  normalizeAutoViewedSync,
   createDefaultConfig,
   getConfigPath,
   initConfig,

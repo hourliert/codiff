@@ -30,6 +30,7 @@ const {
   isSyntheticWalkthroughHunk,
   sumHunkLineCounts,
 } = require('../core/lib/narrative-walkthrough-diff.cjs');
+const { compilePathPatterns, matchesPathPatterns } = require('../core/lib/path-patterns.cjs');
 
 /**
  * @typedef {import('../core/types.ts').ChangedFile} ChangedFile
@@ -586,7 +587,8 @@ const buildPromptSource = (source) => {
 };
 
 /** @param {RepositoryState} state */
-const buildPromptInput = (state) => {
+const buildPromptInput = (state, autoViewedPatterns = []) => {
+  const compiledAutoViewedPatterns = compilePathPatterns(autoViewedPatterns);
   const hunkIdByAlias = new Map();
   let nextHunkAlias = 1;
   let remainingPatchBudget = MAX_TOTAL_PATCH_CHARS;
@@ -601,16 +603,28 @@ const buildPromptInput = (state) => {
     0,
   );
 
+  let autoViewedCount = 0;
   const input = {
     branch: state.branch,
     files: state.files.map((file) => {
       const generated = isGeneratedWalkthroughFile(file);
+      const autoViewed = matchesPathPatterns(compiledAutoViewedPatterns, file.path);
+      if (autoViewed) {
+        autoViewedCount += 1;
+      }
       return {
         ...(generated
           ? {
               generated: true,
               generatedReason:
                 'Generated-like file; Codiff exposes each changed section as one synthetic hunk.',
+            }
+          : {}),
+        ...(autoViewed
+          ? {
+              autoViewed: true,
+              autoViewedReason:
+                'The reviewer has declared this path needs no review attention of its own.',
             }
           : {}),
         oldPath: file.oldPath,
@@ -653,7 +667,7 @@ const buildPromptInput = (state) => {
     source: buildPromptSource(state.source),
   };
 
-  return { hunkIdByAlias, input };
+  return { autoViewedCount, hunkIdByAlias, input };
 };
 
 const buildWalkthroughContextInput = (context, agentLabel) =>
@@ -774,8 +788,14 @@ const getNarrativeWalkthroughTimeoutMs = (state, minimumMs = BASE_WALKTHROUGH_TI
   return Math.min(MAX_WALKTHROUGH_TIMEOUT_MS, Math.max(minimumMs, estimatedMs));
 };
 
-const buildWalkthroughSizingGuidance = (state) => {
+const buildWalkthroughSizingGuidance = (state, hasAutoViewedFiles = false) => {
   const { fileCount, hunkCount } = getWalkthroughSize(state);
+  // Only stated when the digest actually carries the flag, so a reviewer with no
+  // patterns configured does not pay for a rule about a marker that never appears.
+  const autoViewedRule = hasAutoViewedFiles
+    ? `- Files with "autoViewed": true are ones the reviewer has ruled off the main path. Leave them in support. The single exception is evidence that outranks the rule: a test that contradicts the code it covers, or that pins behavior a stop claims changed. Main-path such a file only with prose naming the contradiction.
+`
+    : '';
   const focusedSmallChange = hunkCount <= 12 || (fileCount <= 4 && hunkCount <= 16);
   // Large diffs get no numeric stop target. Asking for a count proportional to
   // the diff made the model split one theme into many single-hunk stops rather
@@ -814,7 +834,7 @@ Grouping contract:
 - A stop may contain up to ${MAX_HUNKS_PER_WALKTHROUGH_GROUP} hunkIds, and on a large diff most stops should carry several. Use multiple hunkIds when the prose needs those hunks read together to understand one invariant, behavior, or repeated pattern.
 - A Git hunk boundary is not a walkthrough boundary. Group hunks that only make sense together, and never create a stop whose explanation depends primarily on code assigned to another stop.
 - Generated-like files have "generated": true and one synthetic hunk per changed section. Never split them; main-path them only when they explain behavior, like snapshots proving output.
-- For 1-4 total hunks, usually write 1-2 stops. Similar same-file hunks should usually be one stop with multiple hunkIds, not separate chapters or stops.
+${autoViewedRule}- For 1-4 total hunks, usually write 1-2 stops. Similar same-file hunks should usually be one stop with multiple hunkIds, not separate chapters or stops.
 - Split distant same-file hunks into separate consecutive stops when they deserve separate prose. Do not make a chapter-sized stop.
 - Do not group a whole large file into one stop when its hunks implement distinct workflows, state transitions, or submission paths.
 - Put hunkIds in the exact display order you want Codiff to render. Out-of-line and cross-file order is allowed when it improves reviewer comprehension.
@@ -830,8 +850,9 @@ const buildNarrativeWalkthroughRequest = (
   agentLabel = 'Codex',
   customPrompt,
   previousWalkthrough,
+  autoViewedPatterns = [],
 ) => {
-  const { hunkIdByAlias, input } = buildPromptInput(state);
+  const { autoViewedCount, hunkIdByAlias, input } = buildPromptInput(state, autoViewedPatterns);
   return {
     hunkIdByAlias,
     prompt: `You are authoring Codiff's narrative walkthrough JSON.
@@ -839,7 +860,7 @@ const buildNarrativeWalkthroughRequest = (
 Do not inspect the repository or run shell commands; use only the optional conversation context and repository digest below.
 If source.description is present, treat it as author-written PR/MR intent and orientation, not proof of behavior. The changed files, patches, and hunk data remain the source of truth for what changed.
 
-${buildWalkthroughSizingGuidance(state)}
+${buildWalkthroughSizingGuidance(state, autoViewedCount > 0)}
 
 ${buildWalkthroughContextInput(context, agentLabel)}
 ${buildCustomPromptInput(customPrompt)}
@@ -856,9 +877,16 @@ const buildNarrativeWalkthroughPrompt = (
   agentLabel = 'Codex',
   customPrompt,
   previousWalkthrough,
+  autoViewedPatterns = [],
 ) =>
-  buildNarrativeWalkthroughRequest(state, context, agentLabel, customPrompt, previousWalkthrough)
-    .prompt;
+  buildNarrativeWalkthroughRequest(
+    state,
+    context,
+    agentLabel,
+    customPrompt,
+    previousWalkthrough,
+    autoViewedPatterns,
+  ).prompt;
 
 /**
  * Cache identity for the exact model input. The previous walkthrough is
@@ -870,9 +898,26 @@ const buildNarrativeWalkthroughPrompt = (
  * @param {unknown} model
  * @param {WalkthroughContext | null | undefined} context
  * @param {unknown} customPrompt
+ * @param {ReadonlyArray<string>} [autoViewedPatterns]
  */
-const getNarrativeWalkthroughCacheKey = (state, agent, model, context, customPrompt) => {
-  const prompt = buildNarrativeWalkthroughPrompt(state, context, agent.label, customPrompt);
+const getNarrativeWalkthroughCacheKey = (
+  state,
+  agent,
+  model,
+  context,
+  customPrompt,
+  autoViewedPatterns = [],
+) => {
+  // The rendered prompt carries the auto-viewed annotations, so changing the
+  // patterns invalidates the cache on its own.
+  const prompt = buildNarrativeWalkthroughPrompt(
+    state,
+    context,
+    agent.label,
+    customPrompt,
+    undefined,
+    autoViewedPatterns,
+  );
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -904,6 +949,7 @@ const readNarrativeWalkthrough = async (
   context,
   customPrompt,
   previousWalkthrough,
+  autoViewedPatterns = [],
 ) => {
   try {
     const timeoutMs = getNarrativeWalkthroughTimeoutMs(state, agent.defaultTimeoutMs);
@@ -914,6 +960,7 @@ const readNarrativeWalkthrough = async (
       agent.label,
       customPrompt,
       previousWalkthrough,
+      autoViewedPatterns,
     );
     agentOptions?.onProgress?.('agent-generation');
     const response = await agent.run(

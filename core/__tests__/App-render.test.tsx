@@ -122,6 +122,7 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     status: 'unavailable' as const,
   })),
   completePlan: vi.fn(async () => {}),
+  confirmAutoViewedSync: vi.fn(async () => false),
   createWalkthroughCommit: vi.fn(async () => ({
     hash: '0000000000000000000000000000000000000000',
     status: 'committed' as const,
@@ -175,6 +176,8 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
   getPlanReview: vi.fn(async () => null),
   getPreferences: vi.fn(async () => ({
     agentBackend: 'codex' as const,
+    autoViewedPatterns: [],
+    autoViewedSync: 'ask' as const,
     claudeModel: defaultSettings.claudeModel,
     codeFontFamily: defaultSettings.codeFontFamily,
     codeFontSize: defaultSettings.codeFontSize,

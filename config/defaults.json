@@ -1,6 +1,8 @@
 {
   "settings": {
     "agentBackend": "codex",
+    "autoViewedPatterns": [],
+    "autoViewedSync": "ask",
     "checkForUpdates": true,
     "claudeEffort": "",
     "claudeModel": "claude-sonnet-5",

@@ -1,4 +1,5 @@
 import type { ChangedFile, ReviewSource } from '../types.ts';
+import { compilePathPatterns, matchesPathPatterns } from './path-patterns.js';
 import { getWalkthroughReviewKeyPrefix } from './review-identity.ts';
 import { getSourceKey } from './source.ts';
 
@@ -87,3 +88,48 @@ export const getViewedFileDelta = (
     }))
     .filter(({ viewed, wasViewed }) => viewed !== wasViewed)
     .map(({ path, viewed }) => ({ path, viewed }));
+
+/**
+ * Records which revision the reviewer's auto-viewed patterns were last applied
+ * to. Namespaced so it cannot collide with a repository path used as a review
+ * key, and stored alongside the marks themselves so it travels with them.
+ */
+const AUTO_VIEWED_REVISION_KEY = '\u0000codiff:autoViewedRevision';
+
+const getReviewRevision = (files: ReadonlyArray<ChangedFile>, source?: ReviewSource) =>
+  source?.type === 'pull-request' && source.headSha
+    ? source.headSha
+    : files.map((file) => file.fingerprint).join(',');
+
+/**
+ * Collapse the files the reviewer has ruled out, but only once per revision.
+ *
+ * Applying on every load would fight the reviewer: un-viewing one of these
+ * files to actually read it would silently re-collapse it on the next reload.
+ * Re-applying when the revision changes is the wanted behaviour, since files
+ * a new push adds should collapse like the rest of their kind.
+ */
+export const applyAutoViewed = (
+  files: ReadonlyArray<ChangedFile>,
+  viewed: Readonly<Record<string, string>>,
+  patterns: ReadonlyArray<string>,
+  source?: ReviewSource,
+): { applied: boolean; viewed: Record<string, string> } => {
+  const revision = getReviewRevision(files, source);
+  const next = { ...viewed };
+  if (patterns.length === 0 || next[AUTO_VIEWED_REVISION_KEY] === revision) {
+    return { applied: false, viewed: next };
+  }
+
+  const compiled = compilePathPatterns(patterns);
+  for (const file of files) {
+    if (next[file.path] !== file.fingerprint && matchesPathPatterns(compiled, file.path)) {
+      next[file.path] = file.fingerprint;
+    }
+  }
+  next[AUTO_VIEWED_REVISION_KEY] = revision;
+  return { applied: true, viewed: next };
+};
+
+/** The bookkeeping key is Codiff's own and is never a reviewable path. */
+export const isViewedBookkeepingKey = (key: string) => key === AUTO_VIEWED_REVISION_KEY;

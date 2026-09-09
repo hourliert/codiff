@@ -16,7 +16,7 @@ import {
   getSectionWalkthroughHunks,
   isSyntheticWalkthroughHunk,
 } from './narrative-walkthrough-diff.js';
-import { getWalkthroughReviewIdentity } from './review-identity.ts';
+import { getWalkthroughReviewIdentity, isReviewIdentityViewed } from './review-identity.ts';
 
 type NarrativeLineCount = {
   added: number;
@@ -41,8 +41,17 @@ type WalkthroughSupportReason = {
 };
 
 /** Everything a narrative walkthrough needs to render. */
+/**
+ * Which stops the reviewer is currently reading. The model already grades every
+ * stop; this is the reader's end of that grade, letting a long walkthrough be
+ * taken as a short one first and in full afterwards.
+ */
+export type WalkthroughImportanceFilter = 'all' | 'critical';
+
 export type WalkthroughView = {
   chapters: ReadonlyArray<WalkthroughChapterView>;
+  /** Stops the current filter is holding back. They are hidden, never dropped. */
+  hiddenStopCount: number;
   sequence: ReadonlyArray<WalkthroughStopView>;
   support: ReadonlyArray<WalkthroughSupportGroup>;
   supportByReason: ReadonlyArray<WalkthroughSupportReason>;
@@ -319,20 +328,46 @@ const groupSupportByReason = (
 };
 
 /** Build the walkthrough view-model with globally indexed stops. */
-export const buildWalkthroughView = (walkthrough: NarrativeWalkthrough): WalkthroughView | null => {
+/** Stops a filter admits. `all` admits everything, so it never needs counting. */
+const stopMatchesImportanceFilter = (
+  stop: { importance: WalkthroughStop['importance'] },
+  filter: WalkthroughImportanceFilter,
+) => filter === 'all' || stop.importance === 'critical';
+
+export const buildWalkthroughView = (
+  walkthrough: NarrativeWalkthrough,
+  importanceFilter: WalkthroughImportanceFilter = 'all',
+): WalkthroughView | null => {
   if (walkthrough.chapters.length === 0) {
     return null;
   }
 
+  const total = walkthrough.chapters.reduce((count, chapter) => count + chapter.stops.length, 0);
+  const admitted = walkthrough.chapters.reduce(
+    (count, chapter) =>
+      count +
+      chapter.stops.filter((stop) => stopMatchesImportanceFilter(stop, importanceFilter)).length,
+    0,
+  );
+  // A filter that would leave nothing to read is not applied. Showing an empty
+  // walkthrough would read as "this change has no review path", which is a
+  // different and false claim.
+  const filter: WalkthroughImportanceFilter = admitted === 0 ? 'all' : importanceFilter;
+
   const sequence: Array<WalkthroughStopView> = [];
-  const chapters = walkthrough.chapters.map((chapter) => {
-    const stops = chapter.stops.map((stop) => {
-      const view = { ...stop, chapterId: chapter.id, index: sequence.length };
-      sequence.push(view);
-      return view;
-    });
-    return { ...chapter, stops };
-  });
+  const chapters = walkthrough.chapters
+    .map((chapter) => {
+      const stops = chapter.stops
+        .filter((stop) => stopMatchesImportanceFilter(stop, filter))
+        .map((stop) => {
+          const view = { ...stop, chapterId: chapter.id, index: sequence.length };
+          sequence.push(view);
+          return view;
+        });
+      return { ...chapter, stops };
+    })
+    // A chapter whose every stop is filtered out has nothing left to head.
+    .filter((chapter) => chapter.stops.length > 0);
 
   if (sequence.length === 0) {
     return null;
@@ -340,9 +375,50 @@ export const buildWalkthroughView = (walkthrough: NarrativeWalkthrough): Walkthr
 
   return {
     chapters,
+    hiddenStopCount: total - sequence.length,
     sequence,
     support: walkthrough.support,
     supportByReason: groupSupportByReason(walkthrough.support),
+  };
+};
+
+/**
+ * Whether every hunk a stop covers has been marked viewed.
+ *
+ * A stop can span several files, and one file's hunks can be split across
+ * several rendered blocks, so this asks the question per hunk rather than per
+ * block: the stop is finished only once nothing it points at is still pending.
+ */
+export const isWalkthroughStopViewed = (
+  stop: { hunks: ReadonlyArray<WalkthroughHunk> },
+  files: ReadonlyArray<ChangedFile>,
+  viewed: Readonly<Record<string, string>>,
+): boolean => {
+  const hunkIdsByPath = new Map<string, Array<string>>();
+  for (const hunk of stop.hunks) {
+    const hunkIds = hunkIdsByPath.get(hunk.path) ?? [];
+    hunkIds.push(hunk.id);
+    hunkIdsByPath.set(hunk.path, hunkIds);
+  }
+  if (hunkIdsByPath.size === 0) {
+    return false;
+  }
+
+  for (const [path, hunkIds] of hunkIdsByPath) {
+    const file = files.find((candidate) => candidate.path === path);
+    if (!file || !isReviewIdentityViewed(viewed, getWalkthroughReviewIdentity(file, hunkIds))) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/** How many stops each filter would show, for a control that has to label itself. */
+export const countWalkthroughStopsByImportance = (walkthrough: NarrativeWalkthrough) => {
+  const stops = walkthrough.chapters.flatMap((chapter) => chapter.stops);
+  return {
+    critical: stops.filter((stop) => stop.importance === 'critical').length,
+    total: stops.length,
   };
 };
 

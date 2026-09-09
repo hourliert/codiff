@@ -9,6 +9,8 @@ import {
   buildCommitModel,
   buildGenericCommitModel,
   buildWalkthroughView,
+  countWalkthroughStopsByImportance,
+  isWalkthroughStopViewed,
   focusChangedFileForHunks,
   formatWalkthroughFileLineRows,
   formatWalkthroughFileList,
@@ -316,6 +318,64 @@ test('formatWalkthroughFileLineRows gives each visible file its own count', () =
       title: 'tests/App.test.tsx',
     },
   ]);
+});
+
+test('the critical filter hides the rest and reports how many', () => {
+  const view = buildWalkthroughView(walkthrough(), 'critical')!;
+
+  expect(view.sequence.map((stop) => stop.id)).toEqual(['s1']);
+  expect(view.hiddenStopCount).toBe(1);
+  // A chapter with nothing left to show has nothing left to head.
+  expect(view.chapters.map((chapter) => chapter.id)).toEqual(['bug']);
+  // The surviving stops renumber, so the reader sees a coherent short sequence
+  // rather than one with gaps in it.
+  expect(view.sequence[0].index).toBe(0);
+});
+
+test('a filter that would empty the walkthrough is not applied', () => {
+  const wt = walkthrough();
+  const normalOnly = {
+    ...wt,
+    chapters: wt.chapters.map((chapter) => ({
+      ...chapter,
+      stops: chapter.stops.map((stop) => ({ ...stop, importance: 'normal' as const })),
+    })),
+  };
+  const view = buildWalkthroughView(normalOnly, 'critical')!;
+
+  // Showing nothing would read as "this change has no review path", which is a
+  // different and false claim.
+  expect(view.sequence).toHaveLength(2);
+  expect(view.hiddenStopCount).toBe(0);
+});
+
+test('counting by importance labels the filter control', () => {
+  expect(countWalkthroughStopsByImportance(walkthrough())).toEqual({ critical: 1, total: 2 });
+});
+
+test('a stop is finished only once every hunk it covers is viewed', () => {
+  const view = buildWalkthroughView(walkthrough())!;
+  const stop = view.sequence[0];
+  const files: ReadonlyArray<ChangedFile> = [
+    {
+      fingerprint: 'a',
+      path: 'src/App.tsx',
+      sections: [
+        {
+          binary: false,
+          id: 'src/App.tsx:staged',
+          kind: 'staged',
+          patch: '@@ -1 +1 @@\n-a\n+b\n',
+        },
+      ],
+      status: 'modified',
+    },
+  ];
+
+  expect(isWalkthroughStopViewed(stop, files, {})).toBe(false);
+  expect(isWalkthroughStopViewed(stop, files, { 'src/App.tsx': 'a' })).toBe(true);
+  // A stop pointing at a file that is no longer in the diff is not finished.
+  expect(isWalkthroughStopViewed(stop, [], { 'src/App.tsx': 'a' })).toBe(false);
 });
 
 test('buildWalkthroughView indexes stops and groups support by reason', () => {

@@ -147,6 +147,53 @@ function SupportingFilesStop({
   );
 }
 
+/**
+ * The reading controls: how much of the walkthrough is on screen, and how much
+ * of it has been read. Both answer the same question a long walkthrough raises
+ * -- "how much of this do I still owe?" -- which a list of stops alone does not.
+ */
+function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
+  const { importanceFilter, stopCounts, walkthroughView } = navigation;
+  if (!walkthroughView) {
+    return null;
+  }
+
+  const visitedCount = walkthroughView.sequence.filter((stop) =>
+    navigation.visited.has(stop.id),
+  ).length;
+  // Nothing to choose between when every stop is critical, or none is.
+  const canFilter = stopCounts.critical > 0 && stopCounts.critical < stopCounts.total;
+
+  return (
+    <div className="wt-toc-reading">
+      <span className="wt-toc-progress">
+        {visitedCount} of {walkthroughView.sequence.length} read
+      </span>
+      {canFilter ? (
+        <span className="wt-toc-filter">
+          <button
+            aria-pressed={importanceFilter === 'all'}
+            className={`wt-toc-filter-option${importanceFilter === 'all' ? ' active' : ''}`}
+            onClick={() => navigation.setImportanceFilter('all')}
+            type="button"
+          >
+            All {stopCounts.total}
+          </button>
+          <button
+            aria-pressed={importanceFilter === 'critical'}
+            className={`wt-toc-filter-option${importanceFilter === 'critical' ? ' active' : ''}`}
+            onClick={() => navigation.setImportanceFilter('critical')}
+            title="Read the stops the walkthrough marked critical first; the rest stay one click away."
+            type="button"
+          >
+            Critical {stopCounts.critical}
+          </button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function NarrativeSidebar({
   allowCommit = true,
   files,
@@ -187,6 +234,8 @@ export function NarrativeSidebar({
         <p>{renderInlineMarkdown(walkthrough.focus)}</p>
       </div>
 
+      <TocReadingBar navigation={navigation} />
+
       <div className="wt-toc-scroll">
         {walkthroughView.chapters.map((chapter) => (
           <div className="wt-toc-chapter" key={chapter.id}>
@@ -209,6 +258,16 @@ export function NarrativeSidebar({
             </div>
           </div>
         ))}
+        {walkthroughView.hiddenStopCount > 0 ? (
+          <button
+            className="wt-toc-hidden"
+            onClick={() => navigation.setImportanceFilter('all')}
+            type="button"
+          >
+            {walkthroughView.hiddenStopCount} more{' '}
+            {walkthroughView.hiddenStopCount === 1 ? 'stop' : 'stops'} — show all
+          </button>
+        ) : null}
         <SupportingFilesStop
           files={files}
           navigation={navigation}

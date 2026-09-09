@@ -49,6 +49,7 @@ declare global {
       applyUpdate: () => Promise<CodiffUpdateStatus>;
       askReviewAssistant: (request: ReviewAssistantRequest) => Promise<ReviewAssistantResult>;
       completePlan: (review: PlanReview, status: PlanHandoffStatus) => Promise<void>;
+      confirmAutoViewedSync: (count: number) => Promise<boolean>;
       createWalkthroughCommit: (
         request: WalkthroughCommitRequest,
       ) => Promise<WalkthroughCommitResult>;
