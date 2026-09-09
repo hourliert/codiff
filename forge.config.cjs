@@ -1,9 +1,9 @@
 // @ts-check
 
 /* eslint-disable @typescript-eslint/no-require-imports, no-undef */
-const { copyFile, mkdir } = require('node:fs/promises');
+const { copyFile, mkdir, readdir } = require('node:fs/promises');
 const { existsSync } = require('node:fs');
-const { dirname, join } = require('node:path');
+const { join } = require('node:path');
 
 const electronCachePath = process.env.ELECTRON_CACHE || join(__dirname, '.cache/electron');
 const entitlementsPath = join(__dirname, 'electron/entitlements.plist');
@@ -16,7 +16,7 @@ const macAssetCatalogPath = existsSync(join(__dirname, 'electron/icons/Assets.ca
   : undefined;
 const linuxIconPath = './electron/icons/icon.png';
 const windowsIconPath = './electron/icons/icon.ico';
-const walkthroughDiffRuntimePath = 'core/lib/narrative-walkthrough-diff.cjs';
+const coreRuntimeDirectory = 'core/lib';
 const skipSquirrel = process.env.CODIFF_SKIP_SQUIRREL === '1';
 const osxNotarize =
   process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID
@@ -70,12 +70,22 @@ const osxSign = process.env.APPLE_SIGNING_IDENTITY
 /** @type {CodiffForgeConfig} */
 module.exports = {
   hooks: {
+    // `core` is dropped wholesale by the packager: the renderer ships built in
+    // `dist`, so its sources are dead weight. The main process still requires a
+    // few `.cjs` modules straight out of `core/lib`, so copy all of them back
+    // rather than naming them one at a time -- naming them meant a module added
+    // later packaged fine and then crashed the launched app with `Cannot find
+    // module`, which is not a failure any check here catches.
     packageAfterCopy: async (_forgeConfig, buildPath) => {
-      const source = join(__dirname, walkthroughDiffRuntimePath);
-      const destination = join(buildPath, walkthroughDiffRuntimePath);
+      const source = join(__dirname, coreRuntimeDirectory);
+      const destination = join(buildPath, coreRuntimeDirectory);
 
-      await mkdir(dirname(destination), { recursive: true });
-      await copyFile(source, destination);
+      await mkdir(destination, { recursive: true });
+      for (const entry of await readdir(source)) {
+        if (entry.endsWith('.cjs')) {
+          await copyFile(join(source, entry), join(destination, entry));
+        }
+      }
     },
     prePackage: async (forgeConfig, platform) => {
       if (platform !== 'darwin' || !macAssetCatalogPath) {
