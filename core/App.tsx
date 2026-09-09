@@ -215,6 +215,24 @@ export default function App() {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [state, setState] = useState<RepositoryState | null>(null);
+  /**
+   * Conversations the review has moved past: threads the reviewer resolved, and
+   * threads GitHub marked outdated because the code under them changed. Both
+   * are the host's own record, not an inference about whether the point still
+   * stands.
+   */
+  const settledCommentAnchors = useMemo(
+    () => [
+      ...(state?.resolvedCommentAnchors ?? []),
+      ...(state?.reviewComments ?? [])
+        .filter((comment) => comment.isOutdated && comment.lineNumber != null)
+        .map((comment) => ({
+          filePath: comment.filePath,
+          lineNumber: comment.lineNumber as number,
+        })),
+    ],
+    [state?.resolvedCommentAnchors, state?.reviewComments],
+  );
   const [terminalHelperInstalling, setTerminalHelperInstalling] = useState(false);
   const [terminalHelperStatus, setTerminalHelperStatus] = useState<TerminalHelperStatus>(
     defaultTerminalHelperStatus,
@@ -2108,6 +2126,7 @@ export default function App() {
           reloadDeltaPaths={reloadDeltaPaths}
           searchQuery={sidebarMode === 'history' ? historySearchQuery : fileSearchQuery}
           selectedPath={visibleSelectedPath}
+          settledCommentAnchors={settledCommentAnchors}
           shareWalkthroughDisabled={walkthroughSharing}
           showWhitespace={showWhitespace}
           viewed={viewed}

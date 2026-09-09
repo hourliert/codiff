@@ -237,6 +237,20 @@
 .wt-toc-stop.visited .wt-toc-num {
   color: var(--muted);
 }
+/*
+ * What the last review round makes of this stop. Deliberately quiet: it reports
+ * two computed facts and must never compete with the stop's own title.
+ */
+.wt-toc-continuity {
+  color: var(--sidebar-ref);
+  display: block;
+  font: 500 10px/1.4 var(--font-mono);
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+}
+.wt-toc-stop.visited .wt-toc-continuity {
+  color: var(--muted);
+}
 .wt-toc-file-list {
   display: grid;
   gap: 3px;

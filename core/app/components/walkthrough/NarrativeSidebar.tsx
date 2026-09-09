@@ -12,7 +12,9 @@ import {
   type WalkthroughView,
   type WalkthroughStopView,
 } from '../../../lib/narrative-walkthrough.ts';
-import type { ChangedFile, NarrativeWalkthrough } from '../../../types.ts';
+import type { StopContinuity } from '../../../lib/walkthrough-continuity.ts';
+import { formatStopContinuity, getStopContinuity } from '../../../lib/walkthrough-continuity.ts';
+import type { ChangedFile, NarrativeWalkthrough, ReviewCommentAnchor } from '../../../types.ts';
 import { ChapterIcon } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
@@ -44,12 +46,17 @@ function TocFileRows({
   );
 }
 
+const emptyPaths: ReadonlySet<string> = new Set();
+const emptyAnchors: ReadonlyArray<ReviewCommentAnchor> = [];
+
 function TocStop({
+  continuity,
   current,
   onSelect,
   stop,
   visited,
 }: {
+  continuity: StopContinuity;
   current: boolean;
   onSelect: (index: number) => void;
   stop: WalkthroughStopView;
@@ -58,6 +65,7 @@ function TocStop({
   const isDone = visited && !current;
   const files = formatWalkthroughFileLineRows(stop.hunks);
   const title = stop.title ?? walkthroughItemTitleFallback(stop);
+  const continuityLabel = formatStopContinuity(continuity);
   return (
     <button
       className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' visited' : ''}`}
@@ -82,6 +90,7 @@ function TocStop({
           <span className="wt-toc-title">{title}</span>
         </span>
         <TocFileRows files={files} />
+        {continuityLabel ? <span className="wt-toc-continuity">{continuityLabel}</span> : null}
       </span>
     </button>
   );
@@ -196,17 +205,21 @@ function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
 
 export function NarrativeSidebar({
   allowCommit = true,
+  changedSincePaths = emptyPaths,
   files,
   navigation,
   onShareWalkthrough,
+  settledCommentAnchors = emptyAnchors,
   shareWalkthroughDisabled = false,
   showWhitespace,
   walkthrough,
 }: {
   allowCommit?: boolean;
+  changedSincePaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
   onShareWalkthrough?: () => void;
+  settledCommentAnchors?: ReadonlyArray<ReviewCommentAnchor>;
   shareWalkthroughDisabled?: boolean;
   showWhitespace: boolean;
   walkthrough: NarrativeWalkthrough;
@@ -248,6 +261,11 @@ export function NarrativeSidebar({
             <div className="wt-toc-stops">
               {chapter.stops.map((stop) => (
                 <TocStop
+                  continuity={getStopContinuity(
+                    stop.hunks,
+                    changedSincePaths,
+                    settledCommentAnchors,
+                  )}
                   current={navigation.mode === 'stop' && stop.id === currentStopId}
                   key={stop.id}
                   onSelect={navigation.goStop}

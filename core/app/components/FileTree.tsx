@@ -18,8 +18,10 @@ const emptyPaths = new Set<string>();
 const emptyViewed: Readonly<Record<string, string>> = {};
 const reloadDeltaGitStatusStyleAttribute = 'data-codiff-reload-delta-git-status';
 const viewedRowStyleAttribute = 'data-codiff-viewed-rows';
+const changedSinceStyleAttribute = 'data-codiff-changed-since-rows';
 
 export function ReviewFileTree({
+  changedSincePaths = emptyPaths,
   files,
   onActivatePath,
   reloadDeltaPaths = emptyPaths,
@@ -28,6 +30,8 @@ export function ReviewFileTree({
   showWhitespace,
   viewed = emptyViewed,
 }: {
+  /** Files the agent has touched since the last review round of this change. */
+  changedSincePaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   onActivatePath: (path: string) => void;
   reloadDeltaPaths?: ReadonlySet<string>;
@@ -38,21 +42,30 @@ export function ReviewFileTree({
 }) {
   const treeHostRef = useRef<HTMLDivElement>(null);
   const [hideViewed, setHideViewed] = useState(false);
+  const [onlyChangedSince, setOnlyChangedSince] = useState(false);
+  const changedSinceCount = useMemo(
+    () => files.filter((file) => changedSincePaths.has(file.path)).length,
+    [changedSincePaths, files],
+  );
   const viewedCount = useMemo(
     () => files.filter((file) => viewed[file.path] === file.fingerprint).length,
     [files, viewed],
   );
   // The selected file stays listed even once it is viewed, so marking the file
   // you are reading does not make it vanish from under you.
-  const visibleFiles = useMemo(
-    () =>
-      hideViewed
-        ? files.filter(
-            (file) => viewed[file.path] !== file.fingerprint || file.path === selectedPath,
-          )
-        : files,
-    [files, hideViewed, selectedPath, viewed],
-  );
+  const visibleFiles = useMemo(() => {
+    let visible = files;
+    if (onlyChangedSince) {
+      visible = visible.filter(
+        (file) => changedSincePaths.has(file.path) || file.path === selectedPath,
+      );
+    }
+    return hideViewed
+      ? visible.filter(
+          (file) => viewed[file.path] !== file.fingerprint || file.path === selectedPath,
+        )
+      : visible;
+  }, [changedSincePaths, files, hideViewed, onlyChangedSince, selectedPath, viewed]);
   const paths = useMemo(() => visibleFiles.map((file) => file.path), [visibleFiles]);
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const lineCountsByPath = useMemo(
@@ -65,6 +78,10 @@ export function ReviewFileTree({
     [reloadDeltaPaths],
   );
   const viewedRowCSS = useMemo(() => getViewedRowCSS(visibleFiles, viewed), [viewed, visibleFiles]);
+  const changedSinceCSS = useMemo(
+    () => getChangedSinceCSS(visibleFiles, changedSincePaths),
+    [changedSincePaths, visibleFiles],
+  );
   const renderTreeRowDecoration = useCallback<FileTreeRowDecorationRenderer>(({ item }) => {
     const lineCount = lineCountsByPathRef.current.get(item.path);
     return lineCount?.countable
@@ -127,6 +144,7 @@ export function ReviewFileTree({
 
   useTreeShadowStyle(treeHostRef, reloadDeltaGitStatusStyleAttribute, reloadDeltaGitStatusCSS);
   useTreeShadowStyle(treeHostRef, viewedRowStyleAttribute, viewedRowCSS);
+  useTreeShadowStyle(treeHostRef, changedSinceStyleAttribute, changedSinceCSS);
 
   useLayoutEffect(() => {
     lineCountsByPathRef.current = lineCountsByPath;
@@ -200,6 +218,18 @@ export function ReviewFileTree({
 
   return (
     <div className="file-tree-shell" ref={treeHostRef}>
+      {changedSinceCount > 0 ? (
+        <button
+          aria-pressed={onlyChangedSince}
+          className={`file-tree-viewed-filter${onlyChangedSince ? ' active' : ''}`}
+          onClick={() => setOnlyChangedSince((current) => !current)}
+          type="button"
+        >
+          {onlyChangedSince
+            ? `Showing what moved · ${changedSinceCount} changed`
+            : `Show ${changedSinceCount} changed since last review`}
+        </button>
+      ) : null}
       {viewedCount > 0 ? (
         <button
           aria-pressed={hideViewed}
@@ -231,6 +261,26 @@ const getReloadDeltaGitStatusCSS = (paths: ReadonlySet<string>) =>
       (path) => `
         [data-item-path="${escapeCSSString(path)}"][data-item-git-status] > [data-item-section='git'] {
           color: var(--sidebar-ref);
+        }
+      `,
+    )
+    .join('\n');
+
+/**
+ * Marks the files the agent rewrote since the reviewer last looked, so a round
+ * that only touched four of eighty files says so before anything is opened.
+ */
+const getChangedSinceCSS = (
+  files: ReadonlyArray<ChangedFile>,
+  changedSincePaths: ReadonlySet<string>,
+) =>
+  files
+    .filter((file) => changedSincePaths.has(file.path))
+    .map(
+      (file) => `
+        [data-item-path="${escapeCSSString(file.path)}"] > [data-item-section='name'] {
+          color: var(--sidebar-ref);
+          font-weight: 600;
         }
       `,
     )

@@ -15,7 +15,13 @@ import {
 } from '../../lib/diff.ts';
 import { isNativeInputTarget } from '../../lib/keyboard.ts';
 import { getShortRef, getSourceKey } from '../../lib/source.ts';
-import type { ChangedFile, HistoryEntry, NarrativeWalkthrough, ReviewSource } from '../../types.ts';
+import type {
+  ChangedFile,
+  HistoryEntry,
+  NarrativeWalkthrough,
+  ReviewCommentAnchor,
+  ReviewSource,
+} from '../../types.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { ReviewFileTree } from './FileTree.tsx';
@@ -46,6 +52,7 @@ export function Sidebar({
   reloadDeltaPaths,
   searchQuery,
   selectedPath,
+  settledCommentAnchors,
   shareWalkthroughDisabled,
   showWhitespace,
   viewed,
@@ -75,6 +82,7 @@ export function Sidebar({
   reloadDeltaPaths: ReadonlySet<string>;
   searchQuery: string;
   selectedPath: string | null;
+  settledCommentAnchors: ReadonlyArray<ReviewCommentAnchor>;
   shareWalkthroughDisabled?: boolean;
   showWhitespace: boolean;
   viewed: Record<string, string>;
@@ -95,6 +103,13 @@ export function Sidebar({
   const showCommitButton =
     mode === 'tree' && currentSource.type === 'working-tree' && commitFiles.length > 0;
   const showFooter = showTotalLineCount || showCommitButton;
+  // The walkthrough is where the host reports what a previous review round
+  // looked at, so the tree reads it from there rather than taking a prop that
+  // would only ever carry the same thing.
+  const changedSincePaths = useMemo(
+    () => new Set(narrativeWalkthrough?.previousRound?.changedPaths ?? []),
+    [narrativeWalkthrough?.previousRound?.changedPaths],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -137,9 +152,11 @@ export function Sidebar({
         />
       ) : mode === 'walkthrough' && narrativeWalkthrough ? (
         <NarrativeSidebar
+          changedSincePaths={changedSincePaths}
           files={commitFiles}
           navigation={narrativeNavigation}
           onShareWalkthrough={onShareWalkthrough}
+          settledCommentAnchors={settledCommentAnchors}
           shareWalkthroughDisabled={shareWalkthroughDisabled}
           showWhitespace={showWhitespace}
           walkthrough={narrativeWalkthrough}
@@ -166,6 +183,7 @@ export function Sidebar({
         </>
       ) : (
         <ReviewFileTree
+          changedSincePaths={changedSincePaths}
           files={files}
           onActivatePath={onActivatePath}
           reloadDeltaPaths={reloadDeltaPaths}

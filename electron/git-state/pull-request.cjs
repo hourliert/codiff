@@ -509,6 +509,37 @@ const selectUnresolvedReviewComments = (comments, resolvedCommentIds, viewerLogi
     .filter(Boolean);
 
 /**
+ * Where the reviewer's resolved conversations were, and nothing else.
+ *
+ * Resolved comments stay out of `reviewComments` on purpose: they are settled,
+ * and putting them back would fill the diff with closed threads and leak them
+ * into the markdown handed to the agent. Their positions are still worth
+ * knowing -- a resolved thread is a place the review already moved past -- so
+ * only the anchors come through.
+ *
+ * @param {ReadonlyArray<GitHubReviewComment>} comments
+ * @param {ReadonlySet<number>} resolvedCommentIds
+ * @param {string} [viewerLogin]
+ * @returns {Array<import('../../core/types.ts').ReviewCommentAnchor>}
+ */
+const selectResolvedReviewCommentAnchors = (comments, resolvedCommentIds, viewerLogin) => {
+  const anchors = [];
+  for (const comment of comments) {
+    const lineNumber = firstNumber(comment.line, comment.original_line);
+    if (
+      !resolvedCommentIds.has(comment.id) ||
+      !comment.path ||
+      lineNumber == null ||
+      (viewerLogin && comment.user?.login !== viewerLogin)
+    ) {
+      continue;
+    }
+    anchors.push({ filePath: comment.path, lineNumber });
+  }
+  return anchors;
+};
+
+/**
  * GitHub tracks a viewed flag per file per reviewer, which is the same signal
  * Codiff shows in the diff header. `DISMISSED` means the file was viewed and
  * has changed since, so only `VIEWED` counts as viewed.
@@ -731,7 +762,15 @@ const readPullRequestComments = async (repoRoot, pullRequest) => {
     // already paying.
     readGitHubViewerLogin(repoRoot),
   ]);
-  return selectUnresolvedReviewComments(pages.flat(), resolvedCommentIds, viewerLogin);
+  const comments = pages.flat();
+  return {
+    resolvedCommentAnchors: selectResolvedReviewCommentAnchors(
+      comments,
+      resolvedCommentIds,
+      viewerLogin,
+    ),
+    reviewComments: selectUnresolvedReviewComments(comments, resolvedCommentIds, viewerLogin),
+  };
 };
 
 /** @param {string} repoRoot @param {PullRequestReference} pullRequest @returns {Promise<Array<GitHubCommit>>} */
@@ -1030,7 +1069,7 @@ const readPullRequestState = async (launchPath, source) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
   const pullRequest = parseGitHubPullRequestUrl(source.url);
 
-  const [metadata, apiFiles, diff, reviewComments, viewerLogin, viewedPaths] = await Promise.all([
+  const [metadata, apiFiles, diff, comments, viewerLogin, viewedPaths] = await Promise.all([
     readPullRequestMetadata(repoRoot, pullRequest),
     readPullRequestFiles(repoRoot, pullRequest),
     readPullRequestDiff(repoRoot, pullRequest),
@@ -1109,7 +1148,10 @@ const readPullRequestState = async (launchPath, source) => {
     files,
     generatedAt: Date.now(),
     launchPath,
-    reviewComments,
+    ...(comments.resolvedCommentAnchors.length
+      ? { resolvedCommentAnchors: comments.resolvedCommentAnchors }
+      : {}),
+    reviewComments: comments.reviewComments,
     root: repoRoot,
     source: createPullRequestSource(pullRequest, metadata),
     viewedPaths,
@@ -1361,6 +1403,7 @@ module.exports = {
   resolvePullRequestContentRefs,
   setPullRequestFileViewed,
   selectPullRequestRemote,
+  selectResolvedReviewCommentAnchors,
   selectUnresolvedReviewComments,
   submitPullRequestComment,
   submitPullRequestReview,
