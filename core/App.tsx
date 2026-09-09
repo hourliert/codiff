@@ -798,6 +798,45 @@ export default function App() {
         setWalkthroughLoading(false);
       }
 
+      // Show the review before the walkthrough exists, not after. Generating one
+      // takes minutes on a large pull request, and committing this state behind
+      // that request left the whole window on a single loading line for the
+      // duration -- including the progress display that was reporting on it.
+      // Nothing here depends on the narrative; the diff has already been read.
+
+      // Reopen the commit view after a reload, but only while it would still be
+      // openable (same conditions as openCommitView); e.g. once the commit
+      // lands the working tree may be empty and we fall back to the review.
+      const restoreCommitView =
+        getReloadMainMode(reloadSelection, orderedState) === 'commit' &&
+        orderedState.source.type === 'working-tree' &&
+        orderedState.files.length > 0;
+      if (restoreCommitView) {
+        setSidebarMode('tree');
+        setMainMode('commit');
+      }
+
+      setHistoryEntries(history.entries);
+      setHistoryHasMore(history.entries.length >= HISTORY_PAGE_SIZE);
+      setHistoryLimit(HISTORY_PAGE_SIZE);
+      setHistorySource(nextHistorySource ?? null);
+      stateGenerationRef.current += 1;
+      stateRef.current = orderedState;
+      setState(orderedState);
+      setLoadError(null);
+      setCollapsed(getCollapsedViewedPaths(orderedState.files, nextViewed));
+      setExpandedReviewKeys(new Set());
+      setItemVersionByKey({});
+      resetCommentFocus();
+      setReloadDeltaPaths(nextReloadDeltaPaths);
+      setReviewComments(getReviewCommentsFromState(orderedState));
+      setViewed(nextViewed);
+      const nextSelectedPath = reloadSelectedPath ?? orderedState.files[0]?.path ?? null;
+      setSelectedPath(nextSelectedPath);
+      if (reloadSelectedPath) {
+        scrollPathIntoReview(reloadSelectedPath, 'instant');
+      }
+
       // Always consult the main process for a pre-authored walkthrough file, even
       // when the diff is empty, so it can diagnose *why* (e.g. the changes were
       // committed) rather than us guessing in the renderer.
@@ -839,39 +878,6 @@ export default function App() {
       }
 
       setWalkthroughLoading(false);
-
-      // Reopen the commit view after a reload, but only while it would still be
-      // openable (same conditions as openCommitView); e.g. once the commit
-      // lands the working tree may be empty and we fall back to the review.
-      const restoreCommitView =
-        getReloadMainMode(reloadSelection, orderedState) === 'commit' &&
-        orderedState.source.type === 'working-tree' &&
-        orderedState.files.length > 0;
-      if (restoreCommitView) {
-        setSidebarMode('tree');
-        setMainMode('commit');
-      }
-
-      setHistoryEntries(history.entries);
-      setHistoryHasMore(history.entries.length >= HISTORY_PAGE_SIZE);
-      setHistoryLimit(HISTORY_PAGE_SIZE);
-      setHistorySource(nextHistorySource ?? null);
-      stateGenerationRef.current += 1;
-      stateRef.current = orderedState;
-      setState(orderedState);
-      setLoadError(null);
-      setCollapsed(getCollapsedViewedPaths(orderedState.files, nextViewed));
-      setExpandedReviewKeys(new Set());
-      setItemVersionByKey({});
-      resetCommentFocus();
-      setReloadDeltaPaths(nextReloadDeltaPaths);
-      setReviewComments(getReviewCommentsFromState(orderedState));
-      setViewed(nextViewed);
-      const nextSelectedPath = reloadSelectedPath ?? orderedState.files[0]?.path ?? null;
-      setSelectedPath(nextSelectedPath);
-      if (reloadSelectedPath) {
-        scrollPathIntoReview(reloadSelectedPath, 'instant');
-      }
     };
 
     load().catch((error: unknown) => {
