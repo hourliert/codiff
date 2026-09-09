@@ -152,6 +152,8 @@ const codiff = {
   showInFolder: (path) => ipcRenderer.invoke('codiff:showInFolder', path),
   submitPullRequestComment: (request) =>
     ipcRenderer.invoke('codiff:submitPullRequestComment', request),
+  updatePullRequestComment: (request) =>
+    ipcRenderer.invoke('codiff:updatePullRequestComment', request),
   submitPullRequestReview: (request) =>
     ipcRenderer.invoke('codiff:submitPullRequestReview', request),
 };

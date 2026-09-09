@@ -162,6 +162,7 @@ export function useAppReviewComments({
                     author: submittedComment.author,
                     body: submittedComment.body,
                     filePath: submittedComment.filePath,
+                    ...(submittedComment.canEdit ? { canEdit: true } : {}),
                     id: submittedComment.id,
                     isReadOnly: true,
                     ...(submittedComment.anchor === 'file' ? { anchor: 'file' as const } : {}),
@@ -194,6 +195,36 @@ export function useAppReviewComments({
       updateActiveReviewCommentDraft,
       updateRemoteSubmit,
     ],
+  );
+
+  /**
+   * Editing a posted comment is a write to GitHub, not a draft edit. The draft
+   * updater it sits next to deliberately skips read-only comments, so wiring
+   * the edit affordance to it would report success and change nothing.
+   */
+  const updatePullRequestComment = useCallback(
+    async (commentId: string, body: string) => {
+      const currentState = stateRef.current;
+      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
+      if (currentState?.source.type !== 'pull-request' || !comment) {
+        return;
+      }
+
+      const updatedComment = await window.codiff.updatePullRequestComment({
+        body,
+        commentId,
+        source: currentState.source,
+      });
+      setReviewComments((current) =>
+        current.map((candidate) =>
+          candidate.id === commentId
+            ? { ...candidate, body: updatedComment.body, url: updatedComment.url }
+            : candidate,
+        ),
+      );
+      onCommentFileChange(comment.filePath);
+    },
+    [onCommentFileChange, reviewCommentsRef, setReviewComments, stateRef],
   );
 
   const submitPullRequestReview = useCallback(
@@ -259,5 +290,6 @@ export function useAppReviewComments({
     setReviewComments,
     submitPullRequestComment,
     submitPullRequestReview,
+    updatePullRequestComment,
   };
 }

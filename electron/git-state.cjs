@@ -36,6 +36,8 @@ const {
   selectUnresolvedReviewComments,
   setPullRequestFileViewed,
   submitPullRequestComment,
+  toGitHubCommentId,
+  updatePullRequestComment,
   submitPullRequestReview,
 } = require('./git-state/pull-request.cjs');
 const {
@@ -241,6 +243,7 @@ module.exports = {
   parseGitHubPullRequestUrl,
   parseGitLabMergeRequestUrl,
   selectUnresolvedReviewComments,
+  toGitHubCommentId,
   readBranchState,
   readDiffSectionContent,
   readDiffImageContent,
@@ -266,5 +269,9 @@ module.exports = {
       launchPath,
       request,
     ),
+  // GitLab notes are edited through a different endpoint that codiff does not
+  // implement, so the renderer never offers the affordance there: `canEdit` is
+  // only ever emitted for GitHub.
+  updatePullRequestComment: (launchPath, request) => updatePullRequestComment(launchPath, request),
   validateRepositoryPath,
 };

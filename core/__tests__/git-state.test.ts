@@ -84,7 +84,7 @@ type GitStateModule = {
     source?: ReviewSource,
   ) => Promise<{ entries: ReadonlyArray<unknown>; root: string }>;
   normalizeGitHubPullRequestCommit: (commit: Record<string, unknown>) => unknown;
-  normalizeGitHubReviewComment: (comment: Record<string, unknown>) => unknown;
+  normalizeGitHubReviewComment: (comment: Record<string, unknown>, viewerLogin?: string) => unknown;
   normalizePullRequestComment: (comment: Record<string, unknown>) => Record<string, unknown>;
   parseGitHubPullRequestUrl: (value: string) => {
     number: number;
@@ -123,6 +123,7 @@ type GitStateModule = {
   selectUnresolvedReviewComments: (
     comments: ReadonlyArray<Record<string, unknown>>,
     resolvedCommentIds: ReadonlySet<number>,
+    viewerLogin?: string,
   ) => Array<Record<string, unknown>>;
   submitPullRequestComment: (
     launchPath: string,
@@ -136,6 +137,7 @@ type GitStateModule = {
       source: Extract<ReviewSource, { type: 'pull-request' }>;
     },
   ) => Promise<Record<string, unknown>>;
+  toGitHubCommentId: (id: string) => string;
   validateRepositoryPath: (path: unknown) => string;
 };
 
@@ -164,6 +166,7 @@ const {
   resolvePullRequestContentRefs,
   selectUnresolvedReviewComments,
   submitPullRequestComment,
+  toGitHubCommentId,
   validateRepositoryPath,
 } = require('../../electron/git-state.cjs') as GitStateModule;
 
@@ -885,6 +888,36 @@ test('normalizeGitHubReviewComment leaves current comments unflagged', () => {
 
   expect(comment).toMatchObject({ lineNumber: 20 });
   expect(comment).not.toHaveProperty('isOutdated');
+});
+
+test('normalizeGitHubReviewComment marks the viewer as able to edit their own comment', () => {
+  const comment = (login: string | undefined) =>
+    normalizeGitHubReviewComment(
+      {
+        body: 'Mine to fix.',
+        created_at: '2026-05-19T00:00:00Z',
+        html_url: 'https://github.com/nkzw-tech/codiff/pull/1#discussion_r9',
+        id: 9,
+        line: 4,
+        path: 'src/file.ts',
+        side: 'RIGHT',
+        user: { login: 'hourliert' },
+      },
+      login,
+    );
+
+  expect(comment('hourliert')).toMatchObject({ canEdit: true });
+  // Someone else's comment, and the case where the viewer could not be
+  // resolved at all, both stay unflagged rather than defaulting to editable.
+  expect(comment('someone-else')).not.toHaveProperty('canEdit');
+  expect(comment(undefined)).not.toHaveProperty('canEdit');
+});
+
+test('toGitHubCommentId strips the host prefix and refuses anything else', () => {
+  expect(toGitHubCommentId('github:12345')).toBe('12345');
+  expect(toGitHubCommentId('12345')).toBe('12345');
+  expect(() => toGitHubCommentId('gitlab:12345')).toThrow(/without a GitHub id/u);
+  expect(() => toGitHubCommentId('github:abc')).toThrow(/without a GitHub id/u);
 });
 
 test('collectResolvedReviewCommentIds gathers comment ids from resolved threads only', () => {

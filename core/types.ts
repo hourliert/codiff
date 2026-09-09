@@ -898,6 +898,12 @@ export type SubmitPullRequestCommentRequest = {
   source: Extract<ReviewSource, { type: 'pull-request' }>;
 };
 
+export type UpdatePullRequestCommentRequest = {
+  body: string;
+  commentId: string;
+  source: Extract<ReviewSource, { type: 'pull-request' }>;
+};
+
 export type SubmitPullRequestReviewRequest = {
   body?: string;
   comments: ReadonlyArray<PullRequestReviewComment>;
