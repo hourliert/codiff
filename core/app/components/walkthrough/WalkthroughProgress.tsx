@@ -50,32 +50,36 @@ const formatCount = (value: number) =>
 const formatPlural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /**
- * What the agent has produced, in the most specific terms available.
+ * What the agent has produced so far.
  *
- * The structure counts are the only true measure of progress, because they have
- * a denominator the reviewer can feel. Character counts are the fallback: they
- * cannot say how far along the work is, only that it is still happening, which
- * is the next best thing to know.
+ * The volume leads and the structures are appended to it, rather than replacing
+ * it once they appear. Structures are the better measure -- they have a
+ * denominator a reviewer can feel -- but they arrive only once the response
+ * reaches them, and swapping one reading for the other left the line unchanged
+ * for whatever stretch came first. Appending keeps a number moving throughout,
+ * whatever order the agent writes its fields in.
  */
 const getDetail = ({
   chapters,
   outputCharacters,
-  phase,
   stops,
   thinkingCharacters,
 }: WalkthroughProgressState) => {
-  if (chapters > 0 || stops > 0) {
-    return stops > 0
-      ? `${formatPlural(chapters, 'chapter')} · ${formatPlural(stops, 'stop')}`
-      : formatPlural(chapters, 'chapter');
-  }
-  if (phase === 'agent-generation' && thinkingCharacters > 0) {
-    return `${formatCount(thinkingCharacters)} reasoned`;
-  }
+  const parts = [];
   if (outputCharacters > 0) {
-    return `${formatCount(outputCharacters)} written`;
+    parts.push(`${formatCount(outputCharacters)} written`);
+  } else if (thinkingCharacters > 0) {
+    // Only until the response starts. After that, what was written is the
+    // number that says how far along this is.
+    parts.push(`${formatCount(thinkingCharacters)} reasoned`);
   }
-  return '';
+  if (chapters > 0) {
+    parts.push(formatPlural(chapters, 'chapter'));
+  }
+  if (stops > 0) {
+    parts.push(formatPlural(stops, 'stop'));
+  }
+  return parts.join(' · ');
 };
 
 export function WalkthroughProgress({

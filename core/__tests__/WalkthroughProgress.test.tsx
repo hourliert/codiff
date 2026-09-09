@@ -6,6 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import {
+  initialWalkthroughProgress,
   nextWalkthroughResponseLabelIndex,
   WalkthroughProgress,
   walkthroughResponseLabels,
@@ -87,4 +88,44 @@ test('reserves timer space, reveals 3s without shifting, and resets for each sta
   });
   expect(timer()?.textContent).toBe('3s');
   expect(timer()?.classList.contains('visible')).toBe(true);
+});
+
+test('the detail line keeps the volume when the structure counts arrive', async () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = createRoot(container);
+
+  await using _resource = {
+    async [Symbol.asyncDispose]() {
+      await act(async () => root?.unmount());
+      root = null;
+      container.remove();
+    },
+  };
+
+  const render = async (progress: Partial<typeof initialWalkthroughProgress>) => {
+    await act(async () => {
+      root?.render(
+        <WalkthroughProgress
+          phase="response-received"
+          progress={{ ...initialWalkthroughProgress, ...progress, updatedAt: Date.now() }}
+          responseLabelIndex={0}
+          stageRevision={1}
+        />,
+      );
+    });
+    return container.querySelector('.walkthrough-progress-detail')?.textContent ?? '';
+  };
+
+  // Reasoning is only the reading until the response starts, because after that
+  // what has been written is what says how far along the walkthrough is.
+  expect(await render({ thinkingCharacters: 4200 })).toBe('4.2k reasoned');
+  expect(await render({ outputCharacters: 6600, thinkingCharacters: 4200 })).toBe('6.6k written');
+
+  // The structures are appended rather than swapped in. Replacing the volume
+  // left this line frozen for however long the agent took to reach a chapter.
+  expect(await render({ chapters: 1, outputCharacters: 6600 })).toBe('6.6k written · 1 chapter');
+  expect(await render({ chapters: 6, outputCharacters: 9100, stops: 18 })).toBe(
+    '9.1k written · 6 chapters · 18 stops',
+  );
 });
