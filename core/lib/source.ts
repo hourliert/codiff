@@ -53,7 +53,7 @@ const sourceCapabilitiesByType = {
     lazyDiffContent: false,
     preloadDiffSearchContent: false,
     startInHistoryWhenEmpty: false,
-    viewedFileState: false,
+    viewedFileState: true,
   },
   range: {
     emptyTitle: 'No changes in range',

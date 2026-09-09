@@ -23,6 +23,7 @@ const {
   readGitIdentity,
   readRepositoryState,
   readWalkthroughRepositoryState,
+  setFileViewed,
   submitPullRequestComment,
   submitPullRequestReview,
   validateRepositoryPath,
@@ -1784,6 +1785,11 @@ ipcMain.handle('codiff:updateWalkthroughCommitMessage', async (event, request) =
   );
   const agent = resolveWindowAgent(event.sender.id);
   return readCommitMessageReply(state, request, agent, getAgentOptions(agent));
+});
+
+ipcMain.handle('codiff:setFileViewed', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return setFileViewed(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:submitPullRequestComment', async (event, request) => {

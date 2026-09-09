@@ -139,6 +139,7 @@ const codiff = {
   openFile: (path, lineNumber) => ipcRenderer.invoke('codiff:openFile', path, lineNumber),
   openRepositoryFolder: () => ipcRenderer.invoke('codiff:openRepositoryFolder'),
   resolvePullRequestUrl: (value) => ipcRenderer.invoke('codiff:resolvePullRequestUrl', value),
+  setFileViewed: (request) => ipcRenderer.invoke('codiff:setFileViewed', request),
   setDiffStyle: (value) => ipcRenderer.invoke('codiff:setDiffStyle', value),
   setShowOutdated: (value) => ipcRenderer.invoke('codiff:setShowOutdated', value),
   setWordWrap: (value) => ipcRenderer.invoke('codiff:setWordWrap', value),
