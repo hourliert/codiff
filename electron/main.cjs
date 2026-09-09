@@ -25,6 +25,7 @@ const {
   readWalkthroughRepositoryState,
   setFileViewed,
   submitPullRequestComment,
+  updatePullRequestComment,
   submitPullRequestReview,
   validateRepositoryPath,
 } = require('./git-state.cjs');
@@ -2091,6 +2092,11 @@ ipcMain.handle('codiff:setFileViewed', async (event, request) => {
 ipcMain.handle('codiff:submitPullRequestComment', async (event, request) => {
   const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
   return submitPullRequestComment(repositoryPath, request);
+});
+
+ipcMain.handle('codiff:updatePullRequestComment', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return updatePullRequestComment(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:submitPullRequestReview', async (event, request) => {

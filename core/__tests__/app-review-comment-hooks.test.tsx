@@ -201,3 +201,62 @@ test('app review comments submit and clear pending review drafts', async () => {
   expect(getState().reviewComments).toEqual([]);
   expect(getState().pullRequestReviewSubmitting).toBeNull();
 });
+
+test('app review comments send a posted comment edit to the host', async () => {
+  const updatePullRequestComment = vi.fn(async () => ({
+    author: { login: 'hourliert', name: 'Thomas' },
+    body: 'Corrected.',
+    canEdit: true,
+    filePath: comment.filePath,
+    id: 'github:1',
+    lineNumber: comment.lineNumber,
+    side: comment.side,
+    submittedAt: '2026-07-15T00:00:00.000Z',
+    url: 'https://github.com/nkzw-tech/codiff/pull/42#discussion_r1',
+  }));
+  window.codiff = { updatePullRequestComment } as unknown as Window['codiff'];
+  await using view = await renderAppReviewComments(pullRequestState);
+  const { getState, onCommentFileChange } = view;
+
+  const posted: ReviewComment = {
+    ...comment,
+    canEdit: true,
+    id: 'github:1',
+    isReadOnly: true,
+  };
+  await act(async () => {
+    getState().setReviewComments([posted]);
+  });
+  onCommentFileChange.mockClear();
+
+  await act(async () => {
+    await getState().updatePullRequestComment(posted.id, 'Corrected.');
+  });
+
+  // The point of the test: a posted comment is edited on GitHub, not silently
+  // dropped by the draft updater it sits beside.
+  expect(updatePullRequestComment).toHaveBeenCalledWith({
+    body: 'Corrected.',
+    commentId: 'github:1',
+    source: pullRequestState.source,
+  });
+  expect(getState().reviewComments[0]?.body).toBe('Corrected.');
+  expect(onCommentFileChange).toHaveBeenCalledWith(comment.filePath);
+});
+
+test('the draft updater refuses to edit a posted comment', async () => {
+  await using view = await renderAppReviewComments(pullRequestState);
+  const { getState } = view;
+
+  const posted: ReviewComment = { ...comment, id: 'github:1', isReadOnly: true };
+  await act(async () => {
+    getState().setReviewComments([posted]);
+  });
+  await act(async () => {
+    getState().updateComment(posted.id, 'Corrected.');
+  });
+
+  // Wiring the edit affordance to this would have reported success and changed
+  // nothing, which is why `onSaveCommentEdit` must not use it.
+  expect(getState().reviewComments[0]?.body).toBe(comment.body);
+});

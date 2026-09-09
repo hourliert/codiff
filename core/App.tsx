@@ -367,6 +367,7 @@ export default function App() {
     submitPullRequestReview,
     updateActiveReviewCommentDraft,
     updateComment,
+    updatePullRequestComment,
   } = useAppReviewComments({
     isReviewActionDisabled: isPullRequestReviewActionDisabled,
     onCommentFileChange: bumpItemVersion,
@@ -1894,7 +1895,7 @@ export default function App() {
     },
     onOpenFile: openFile,
     onRefreshMarkdown: refreshMarkdownFile,
-    onSaveCommentEdit: updateComment,
+    onSaveCommentEdit: updatePullRequestComment,
     onSelectPathFromScroll: updateSelectedPathFromScroll,
     onSubmitComment: submitPullRequestComment,
     onToggleCollapsed: toggleCollapsed,

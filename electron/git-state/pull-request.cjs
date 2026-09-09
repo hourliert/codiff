@@ -27,6 +27,7 @@ const { parseReviewUrl } = require('../review-source.cjs');
  * @typedef {import('../../core/types.ts').RepositoryState} RepositoryState
  * @typedef {import('../../core/types.ts').ReviewSource} ReviewSource
  * @typedef {import('../../core/types.ts').SubmitPullRequestCommentRequest} SubmitPullRequestCommentRequest
+ * @typedef {import('../../core/types.ts').UpdatePullRequestCommentRequest} UpdatePullRequestCommentRequest
  * @typedef {import('../../core/types.ts').SubmitPullRequestReviewRequest} SubmitPullRequestReviewRequest
  * @typedef {{owner: string; repo: string}} GitHubRepositoryReference
  * @typedef {{name: string; url: string}} LocalGitRemote
@@ -436,8 +437,16 @@ const isGitHubReviewSide = (side) => side === 'LEFT' || side === 'RIGHT';
 /** @param {...unknown} values */
 const firstNumber = (...values) => values.find((value) => typeof value === 'number');
 
-/** @param {GitHubReviewComment} comment */
-const normalizeGitHubReviewComment = (comment) => {
+/**
+ * `canEdit` is what the renderer gates its edit affordance on. GitHub only lets
+ * an author rewrite their own review comment, so authorship is the permission:
+ * the REST payload carries no viewer field, and the viewer's login is already
+ * fetched and memoized for this repository anyway.
+ *
+ * @param {GitHubReviewComment} comment
+ * @param {string} [viewerLogin]
+ */
+const normalizeGitHubReviewComment = (comment, viewerLogin) => {
   const lineNumber = firstNumber(comment.line, comment.original_line);
   if (lineNumber == null || !comment.path || !comment.body) {
     return null;
@@ -459,6 +468,7 @@ const normalizeGitHubReviewComment = (comment) => {
     },
     body: comment.body,
     filePath: comment.path,
+    ...(viewerLogin && comment.user?.login === viewerLogin ? { canEdit: true } : {}),
     id: `github:${comment.id}`,
     ...(typeof comment.line !== 'number' ? { isOutdated: true } : {}),
     lineNumber,
@@ -487,11 +497,15 @@ const collectResolvedReviewCommentIds = (threads) => {
   return ids;
 };
 
-/** @param {ReadonlyArray<GitHubReviewComment>} comments @param {ReadonlySet<number>} resolvedCommentIds */
-const selectUnresolvedReviewComments = (comments, resolvedCommentIds) =>
+/**
+ * @param {ReadonlyArray<GitHubReviewComment>} comments
+ * @param {ReadonlySet<number>} resolvedCommentIds
+ * @param {string} [viewerLogin]
+ */
+const selectUnresolvedReviewComments = (comments, resolvedCommentIds, viewerLogin) =>
   comments
     .filter((comment) => !resolvedCommentIds.has(comment.id))
-    .map(normalizeGitHubReviewComment)
+    .map((comment) => normalizeGitHubReviewComment(comment, viewerLogin))
     .filter(Boolean);
 
 /**
@@ -706,15 +720,18 @@ const readResolvedReviewCommentIds = async (repoRoot, pullRequest) => {
 
 /** @param {string} repoRoot @param {PullRequestReference} pullRequest */
 const readPullRequestComments = async (repoRoot, pullRequest) => {
-  const [pages, resolvedCommentIds] = await Promise.all([
+  const [pages, resolvedCommentIds, viewerLogin] = await Promise.all([
     ghApi(repoRoot, [
       '--paginate',
       '--slurp',
       `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/comments?per_page=100`,
     ]).then((output) => JSON.parse(output)),
     readResolvedReviewCommentIds(repoRoot, pullRequest),
+    // Memoized per process, so asking here costs nothing the state read was not
+    // already paying.
+    readGitHubViewerLogin(repoRoot),
   ]);
-  return selectUnresolvedReviewComments(pages.flat(), resolvedCommentIds);
+  return selectUnresolvedReviewComments(pages.flat(), resolvedCommentIds, viewerLogin);
 };
 
 /** @param {string} repoRoot @param {PullRequestReference} pullRequest @returns {Promise<Array<GitHubCommit>>} */
@@ -1229,9 +1246,57 @@ const submitPullRequestComment = async (launchPath, request) => {
     }
     throw error;
   });
-  const comment = normalizeGitHubReviewComment(JSON.parse(rawComment));
+  const comment = normalizeGitHubReviewComment(
+    JSON.parse(rawComment),
+    await readGitHubViewerLogin(repoRoot),
+  );
   if (!comment) {
     throw new Error('GitHub accepted the comment but did not return line metadata.');
+  }
+  return comment;
+};
+
+/**
+ * Comment ids reach the renderer prefixed, because it holds comments from more
+ * than one host. GitHub's own API wants the bare numeric id back.
+ *
+ * @param {string} id
+ * @returns {string}
+ */
+const toGitHubCommentId = (id) => {
+  const databaseId = id.startsWith('github:') ? id.slice('github:'.length) : id;
+  if (!/^\d+$/u.test(databaseId)) {
+    throw new Error(`Cannot edit a comment without a GitHub id: ${id}`);
+  }
+  return databaseId;
+};
+
+/** @param {string} launchPath @param {UpdatePullRequestCommentRequest} request */
+const updatePullRequestComment = async (launchPath, request) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(request.source.url);
+  const body = request.body.trim();
+  if (!body) {
+    throw new Error('A review comment cannot be empty.');
+  }
+
+  const rawComment = await ghApi(
+    repoRoot,
+    [
+      '-X',
+      'PATCH',
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/comments/${toGitHubCommentId(request.commentId)}`,
+      '--input',
+      '-',
+    ],
+    { body },
+  );
+  const comment = normalizeGitHubReviewComment(
+    JSON.parse(rawComment),
+    await readGitHubViewerLogin(repoRoot),
+  );
+  if (!comment) {
+    throw new Error('GitHub accepted the edit but did not return line metadata.');
   }
   return comment;
 };
@@ -1299,4 +1364,6 @@ module.exports = {
   selectUnresolvedReviewComments,
   submitPullRequestComment,
   submitPullRequestReview,
+  toGitHubCommentId,
+  updatePullRequestComment,
 };

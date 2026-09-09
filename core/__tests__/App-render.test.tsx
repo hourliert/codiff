@@ -269,6 +269,9 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     throw new Error('Unexpected pull request comment submit.');
   }),
   submitPullRequestReview: vi.fn(async () => {}),
+  updatePullRequestComment: vi.fn(async () => {
+    throw new Error('Unexpected pull request comment update.');
+  }),
   updateWalkthroughCommitMessage: vi.fn(async () => ({
     reason: 'Unavailable in tests.',
     status: 'unavailable' as const,
