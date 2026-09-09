@@ -13,8 +13,11 @@ const {
 
 // Claude Code can be slower to first token than Codex, so allow a longer budget.
 const CLAUDE_TIMEOUT_MS = 90_000;
-const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
-const FALLBACK_CLAUDE_MODEL = 'claude-haiku-4-5';
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
+// The fallback has to survive the same prompt the primary model was given.
+// Walkthrough prompts are budgeted against a 1M-token window, so a 200k-window
+// model like Haiku 4.5 would not degrade here — it would hard-fail on context.
+const FALLBACK_CLAUDE_MODEL = 'claude-sonnet-5';
 const CLAUDE_NOT_FOUND_CODE = 'CLAUDE_NOT_FOUND';
 const CLAUDE_NOT_FOUND_MESSAGE =
   'Claude Code CLI was not found. Install Claude Code and verify `claude --version` works in Terminal. Codiff searches PATH, ~/.local/bin/claude, /opt/homebrew/bin/claude, and /usr/local/bin/claude. If Claude Code is installed somewhere else, launch Codiff with `CODIFF_CLAUDE_PATH=/absolute/path/to/claude codiff -w`.';
@@ -40,15 +43,23 @@ const CLAUDE_NOT_LOGGED_IN_MESSAGE =
 /** @type {ReadonlyArray<ClaudeModel>} */
 const CLAUDE_MODELS = Object.freeze([
   {
-    id: 'claude-opus-4-8',
-    label: 'Best: Claude Opus 4.8',
+    id: 'claude-opus-5',
+    label: 'Best: Claude Opus 5',
   },
   {
     id: DEFAULT_CLAUDE_MODEL,
-    label: 'Balanced: Claude Sonnet 4.6',
+    label: 'Balanced: Claude Sonnet 5',
   },
   {
-    id: FALLBACK_CLAUDE_MODEL,
+    id: 'claude-opus-4-8',
+    label: 'Claude Opus 4.8',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
+  },
+  {
+    id: 'claude-haiku-4-5',
     label: 'Fast: Claude Haiku 4.5',
   },
 ]);

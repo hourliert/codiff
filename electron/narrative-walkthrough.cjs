@@ -43,13 +43,16 @@ const {
  */
 
 const MAX_PROSE_CHARS = 4_000;
-const MAX_TOTAL_PATCH_CHARS = 60_000;
-const MAX_LARGE_TOTAL_PATCH_CHARS = 35_000;
-const MAX_SMALL_SECTION_PATCH_CHARS = 8_000;
-const MAX_SECTION_PATCH_CHARS = 2_500;
-const MAX_LARGE_SECTION_PATCH_CHARS = 700;
+// Patch budgets are a proxy for one scarce resource: the model's context
+// window. A 1M-token window is roughly 4M characters, so 400k characters
+// (~100k tokens, ~10% of the window) leaves a typical large PR completely
+// untruncated while still bounding a pathological diff. The budget is
+// deliberately not tiered by file count: a big diff is exactly when coverage
+// matters most, and the total already bounds the prompt on its own.
+const MAX_TOTAL_PATCH_CHARS = 400_000;
+const MAX_SECTION_PATCH_CHARS = 40_000;
 const BASE_WALKTHROUGH_TIMEOUT_MS = 90_000;
-const MAX_WALKTHROUGH_TIMEOUT_MS = 300_000;
+const MAX_WALKTHROUGH_TIMEOUT_MS = 900_000;
 const INCLUDED_WALKTHROUGH_FILES = 8;
 const INCLUDED_WALKTHROUGH_HUNKS = 12;
 const TIMEOUT_MS_PER_EXTRA_FILE = 1_000;
@@ -555,23 +558,6 @@ const buildPromptHunkInput = (hunk, id, patch = '') => {
   };
 };
 
-/** @param {number} fileCount */
-const getPromptPatchBudgets = (fileCount) =>
-  fileCount > 32
-    ? {
-        section: MAX_LARGE_SECTION_PATCH_CHARS,
-        total: MAX_LARGE_TOTAL_PATCH_CHARS,
-      }
-    : fileCount > 8
-      ? {
-          section: MAX_SECTION_PATCH_CHARS,
-          total: MAX_TOTAL_PATCH_CHARS,
-        }
-      : {
-          section: MAX_SMALL_SECTION_PATCH_CHARS,
-          total: MAX_TOTAL_PATCH_CHARS,
-        };
-
 /** @param {RepositoryState['source']} source */
 const buildPromptSource = (source) => {
   if (source.type !== 'pull-request') {
@@ -597,10 +583,19 @@ const buildPromptSource = (source) => {
 
 /** @param {RepositoryState} state */
 const buildPromptInput = (state) => {
-  const patchBudget = getPromptPatchBudgets(state.files.length);
   const hunkIdByAlias = new Map();
   let nextHunkAlias = 1;
-  let remainingPatchBudget = patchBudget.total;
+  let remainingPatchBudget = MAX_TOTAL_PATCH_CHARS;
+  // Sections divide the remaining budget evenly, the same way hunks already
+  // divide their section's budget below. Draining a single running total in
+  // diff order instead would fund the first N sections in full and leave the
+  // tail of the diff with empty excerpts, which is what pushed most of a large
+  // PR into the support bucket. Whatever a section leaves unspent rolls
+  // forward, so earlier small sections widen the allowance for later ones.
+  let remainingSections = state.files.reduce(
+    (total, file) => total + (file.sections || []).length,
+    0,
+  );
 
   const input = {
     branch: state.branch,
@@ -618,7 +613,11 @@ const buildPromptInput = (state) => {
         path: file.path,
         sections: file.sections.map((section) => {
           const sectionHunks = getSectionWalkthroughHunks(file, section);
-          let remainingSectionPatchBudget = Math.min(remainingPatchBudget, patchBudget.section);
+          let remainingSectionPatchBudget = Math.min(
+            MAX_SECTION_PATCH_CHARS,
+            Math.floor(remainingPatchBudget / Math.max(1, remainingSections)),
+          );
+          remainingSections -= 1;
           const hunks = sectionHunks.map((hunk, index) => {
             const alias = `h${nextHunkAlias}`;
             nextHunkAlias += 1;
@@ -774,6 +773,19 @@ const getNarrativeWalkthroughTimeoutMs = (state, minimumMs = BASE_WALKTHROUGH_TI
 const buildWalkthroughSizingGuidance = (state) => {
   const { fileCount, hunkCount } = getWalkthroughSize(state);
   const focusedSmallChange = hunkCount <= 12 || (fileCount <= 4 && hunkCount <= 16);
+  // Large diffs scale their stop count with the amount of reviewable material
+  // instead of landing on one flat range. A fixed "6-9 stops" ceiling forced
+  // almost everything in a large PR into support no matter how good the patch
+  // excerpts were, because there was nowhere on the main path to put it.
+  // Roughly one stop per three hunks keeps each stop a single review idea.
+  const scaledStops = Math.max(
+    6,
+    Math.min(MAX_WALKTHROUGH_CHAPTERS * MAX_WALKTHROUGH_STOPS, Math.ceil(hunkCount / 3)),
+  );
+  const scaledChapters = Math.max(
+    2,
+    Math.min(MAX_WALKTHROUGH_CHAPTERS, Math.ceil(scaledStops / MAX_WALKTHROUGH_STOPS) + 1),
+  );
   const stopInstruction =
     hunkCount <= 4
       ? 'Use at most 2 main-path stops'
@@ -781,9 +793,7 @@ const buildWalkthroughSizingGuidance = (state) => {
         ? 'Use at most 3 main-path stops'
         : fileCount <= 8 && hunkCount <= 32
           ? 'Use at most 5 main-path stops'
-          : fileCount <= 16
-            ? 'Aim for 5-9 main-path stops'
-            : 'Aim for 6-9 main-path stops';
+          : `Aim for ${Math.max(5, Math.floor(scaledStops * 0.7))}-${scaledStops} main-path stops in total across all chapters`;
   const chapterInstruction =
     fileCount <= 2
       ? 'Use 1 story chapter'
@@ -791,7 +801,7 @@ const buildWalkthroughSizingGuidance = (state) => {
         ? 'Use at most 2 story chapters'
         : fileCount <= 8 && hunkCount <= 32
           ? 'Use at most 3 story chapters'
-          : `Use 2-${MAX_WALKTHROUGH_CHAPTERS} story chapters`;
+          : `Use 2-${scaledChapters} story chapters`;
   return `Coverage contract:
 - The digest has ${fileCount} files and ${hunkCount} reviewable hunks. Put the highest-leverage review path in chapters[]; Codiff preserves everything else as support.
 - Digest hunk ids are compact request-local aliases like h1 and h2. Return those aliases exactly; Codiff maps them back to stable live-diff ids.
@@ -801,7 +811,7 @@ const buildWalkthroughSizingGuidance = (state) => {
 - Default to one review idea per stop. Include multiple hunkIds when the hunks implement the same idea, especially in small diffs.
 
 Grouping contract:
-- ${stopInstruction}; this is a ceiling, not a target. Use fewer whenever they still preserve distinct state transitions, submission paths, or runtime contracts. Never exceed ${MAX_WALKTHROUGH_STOPS}.
+- ${stopInstruction}. Use fewer whenever they still preserve distinct state transitions, submission paths, or runtime contracts, and more when the diff genuinely contains that many separate review ideas. A single chapter may hold at most ${MAX_WALKTHROUGH_STOPS} stops; that limit is per chapter, not a total across the walkthrough.
 - ${chapterInstruction}. A chapter is a conceptual group, not a file. For one- or two-file diffs, prefer one chapter unless there are clearly separate review phases.
 - Chapter titles render in a compact top bar: keep each title to 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
 - Every stop must have a concise semantic title that names the review idea in roughly 2-6 words, e.g. "Prevent duplicate payments" or "Preserve offline drafts". Never use a filename or path as a stop title.
@@ -813,7 +823,7 @@ Grouping contract:
 - Do not group a whole large file into one stop when its hunks implement distinct workflows, state transitions, or submission paths.
 - Put hunkIds in the exact display order you want Codiff to render. Out-of-line and cross-file order is allowed when it improves reviewer comprehension.
 - Do not provide added/deleted counts, status, oldPath, section ids, display labels, path, repo, source, generatedAt, agent, or meta; Codiff computes those.
-- Leave secondary, mechanical, docs-only, generated, styling, fixture, and repeated-pattern hunks out of chapters[]. Codiff automatically places every unreferenced hunk in support.
+- Leave secondary, mechanical, docs-only, generated, styling, fixture, and repeated-pattern hunks out of chapters[]. Codiff automatically places every unreferenced hunk in support. Support is for changes that genuinely do not need review attention — it is not an overflow bucket for material that did not fit, so do not drop a substantive change there merely to stay near the low end of the stop range.
 - For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
 `;
 };

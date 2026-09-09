@@ -104,7 +104,7 @@
         "required": ["id", "title", "icon", "blurb", "stops"],
         "type": "object"
       },
-      "maxItems": 6,
+      "maxItems": 10,
       "type": "array"
     },
     "focus": {

@@ -188,7 +188,7 @@ test('reports only the long-running walkthrough generation phases', async () => 
 
   const chapters = runSchema.properties.chapters;
   const stopProperties = chapters.items.properties.stops.items.properties;
-  expect(chapters.maxItems).toBe(6);
+  expect(chapters.maxItems).toBe(10);
   expect(chapters.items.properties.title.maxLength).toBe(16);
   expect(chapters.items.properties.stops.maxItems).toBe(14);
   expect(stopProperties.added).toBeUndefined();
@@ -312,8 +312,9 @@ test('scales walkthrough timeouts passed to the agent', async () => {
 
   expect(smallTimeout).toBe(90_000);
   expect(mediumTimeout).toBeGreaterThan(smallTimeout);
-  expect(mediumTimeout).toBeLessThan(300_000);
-  expect(largeTimeout).toBe(300_000);
+  expect(largeTimeout).toBeGreaterThan(mediumTimeout);
+  expect(largeTimeout).toBeLessThan(900_000);
+  expect(await readTimeout(300, 90_000)).toBe(900_000);
   expect(await readTimeout(4, 180_000)).toBe(180_000);
 });
 
@@ -337,7 +338,7 @@ test('prompts generated walkthroughs to use deterministic hunk groups', () => {
   });
 
   expect(prompt).toContain('digest has 28 files');
-  expect(prompt).toContain('Aim for 6-9 main-path stops');
+  expect(prompt).toContain('main-path stops in total across all chapters');
   expect(prompt).toContain('Define chapters[] in display order');
   expect(prompt).toContain('Default to one review idea per stop');
   expect(prompt).toContain('Every patch hunk contains its own bounded patch excerpt');
@@ -392,7 +393,7 @@ test('prompts small walkthroughs to group similar hunks into compact chapters', 
 
   expect(prompt).toContain('digest has 2 files and 3 reviewable hunks');
   expect(prompt).toContain('Use at most 2 main-path stops');
-  expect(prompt).toContain('this is a ceiling, not a target');
+  expect(prompt).toContain('that limit is per chapter, not a total across the walkthrough');
   expect(prompt).toContain('Use 1 story chapter');
   expect(prompt).toContain('For one- or two-file diffs, prefer one chapter');
   expect(prompt).toContain('Similar same-file hunks should usually be one stop');
@@ -795,8 +796,44 @@ test('repository digest strictly enforces section and total patch budgets', () =
     file.sections.flatMap((section) => section.hunks.map((hunk) => hunk.patch?.length ?? 0)),
   );
 
-  expect(Math.max(...lengths)).toBeLessThanOrEqual(700);
-  expect(lengths.reduce((total, length) => total + length, 0)).toBeLessThanOrEqual(35_000);
+  expect(Math.max(...lengths)).toBeLessThanOrEqual(40_000);
+  expect(lengths.reduce((total, length) => total + length, 0)).toBeLessThanOrEqual(400_000);
+});
+
+test('repository digest funds the tail of a large diff, not just its head', () => {
+  // The total budget used to be drained in diff order, so the first sections
+  // took their full allowance and everything after them got an empty excerpt.
+  // Every file here is identical, so any file with no patch is starvation
+  // rather than a property of its own content.
+  const prompt = buildNarrativeWalkthroughPrompt({
+    branch: 'main',
+    files: Array.from({ length: 200 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      sections: [
+        {
+          id: `src/file-${index}.ts:staged`,
+          kind: 'staged',
+          patch: `@@ -1 +1 @@\n-${'x'.repeat(6_000)}\n+${'y'.repeat(6_000)}\n`,
+        },
+      ],
+      status: 'modified',
+    })),
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  });
+  const digest = JSON.parse(prompt.split('Repository change digest:\n')[1] ?? '{}') as {
+    files: ReadonlyArray<{
+      sections: ReadonlyArray<{ hunks: ReadonlyArray<{ patch?: string }> }>;
+    }>;
+  };
+  const lengths = digest.files.map((file) => file.sections[0]?.hunks[0]?.patch?.length ?? 0);
+
+  expect(lengths).toHaveLength(200);
+  expect(Math.min(...lengths)).toBeGreaterThan(0);
+  expect(lengths.reduce((total, length) => total + length, 0)).toBeLessThanOrEqual(400_000);
+  // Even allocation: the last file gets a comparable excerpt to the first.
+  expect(lengths[199]).toBeGreaterThan(lengths[0] / 2);
 });
 
 test('repository digest keeps summaries separate from bounded hunk patches', () => {
@@ -830,7 +867,7 @@ test('repository digest keeps summaries separate from bounded hunk patches', () 
   };
   const section = digest.files[0]?.sections[0];
 
-  expect(section?.hunks[0]?.patch?.length).toBeLessThanOrEqual(8_000);
+  expect(section?.hunks[0]?.patch?.length).toBeLessThanOrEqual(40_000);
   expect(section?.summary).toBe('R'.repeat(1_000));
 });
 
