@@ -460,6 +460,50 @@ test('stale persisted collapsed sidebar state does not hide the sidebar on launc
   expect(app.container.querySelector('.review-top-bar')).toBe(topBar);
 });
 
+test('confirms auto-viewed files without waiting for the walkthrough', async () => {
+  const confirmAutoViewedSync = vi.fn(async () => false);
+  const pullRequestState = {
+    autoViewedPaths: ['src/a.test.ts'],
+    branch: 'feature',
+    files: [
+      {
+        fingerprint: 'fp-test',
+        path: 'src/a.test.ts',
+        sections: [],
+        status: 'modified' as const,
+      },
+    ],
+    generatedAt: 1,
+    launchPath: '/repo',
+    root: '/repo',
+    source: {
+      headSha: 'sha-1',
+      number: 7,
+      provider: 'github' as const,
+      type: 'pull-request' as const,
+      url: 'https://github.com/owner/repo/pull/7',
+    },
+    viewedPaths: [],
+  } satisfies RepositoryState;
+
+  window.codiff = createCodiffMock({
+    confirmAutoViewedSync,
+    getLaunchOptions: vi.fn(async () => ({
+      repositoryPathProvided: true,
+      walkthrough: true,
+    })),
+    // Generating a walkthrough for a real pull request takes minutes. Anything
+    // sequenced behind it is, in practice, never seen.
+    getNarrativeWalkthrough: vi.fn(() => new Promise<never>(() => {})),
+    getRepositoryState: vi.fn(async () => pullRequestState),
+  });
+
+  await using _app = await renderReact(<App />);
+  // The walkthrough never resolves, so reaching this at all is the assertion:
+  // the confirmation is not sequenced behind it.
+  await waitFor(() => expect(confirmAutoViewedSync).toHaveBeenCalledWith(1));
+});
+
 test('keeps source-loading errors in the open-source dialog', async () => {
   const openReviewSourceListeners: Array<Parameters<Window['codiff']['onOpenReviewSource']>[0]> =
     [];

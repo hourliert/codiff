@@ -83,6 +83,7 @@ const { createSkillInstaller } = require('./main/agent-skill.cjs');
 const { createEditorOpener } = require('./main/editor.cjs');
 const { createDefinitionSearchCoordinator } = require('./definition-search.cjs');
 const { resolveReviewContentRoot } = require('./review-worktree.cjs');
+const { compilePathPatterns, matchesPathPatterns } = require('../core/lib/path-patterns.cjs');
 const { createTerminalHelper } = require('./main/terminal-helper.cjs');
 const {
   readWindowState,
@@ -187,17 +188,42 @@ const refreshInstalledAgentFiles = () => {
 const getActiveAgent = () => getAgent(config.settings.agentBackend);
 
 /** @param {string} repositoryPath @param {ReviewSource} [source] */
+/**
+ * Resolve the reviewer's auto-viewed rules against a loaded review.
+ *
+ * Decided here rather than in the renderer because this is where the config
+ * lives: the same patterns already annotate the walkthrough digest, and having
+ * one process answer the question means the prompt and the diff can never
+ * disagree about which files were ruled out. It also removes a race -- the
+ * renderer learns its config over IPC, with no ordering guarantee against the
+ * repository state it would have to apply the patterns to.
+ *
+ * @param {RepositoryState} state
+ * @returns {RepositoryState}
+ */
+const withAutoViewedPaths = (state) => {
+  const patterns = compilePathPatterns(config.settings.autoViewedPatterns);
+  if (patterns.length === 0) {
+    return state;
+  }
+
+  const autoViewedPaths = state.files
+    .filter((file) => matchesPathPatterns(patterns, file.path))
+    .map((file) => file.path);
+  return autoViewedPaths.length > 0 ? { ...state, autoViewedPaths } : state;
+};
+
 const readRepositoryStateWithConfig = (repositoryPath, source) =>
   readRepositoryState(repositoryPath, source, {
     showWhitespace: config.settings.showWhitespace,
-  });
+  }).then(withAutoViewedPaths);
 
 /** @param {string} repositoryPath @param {CodiffLaunchOptions} launchOptions */
 const readInitialRepositoryStateWithConfig = (repositoryPath, launchOptions) =>
   launchOptions.walkthrough && !launchOptions.walkthroughFile
     ? readWalkthroughRepositoryState(repositoryPath, launchOptions.source, {
         showWhitespace: config.settings.showWhitespace,
-      })
+      }).then(withAutoViewedPaths)
     : readRepositoryStateWithConfig(repositoryPath, launchOptions.source);
 
 /** @param {number} webContentsId */

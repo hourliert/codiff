@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module';
 import { expect, test } from 'vite-plus/test';
-import { compilePathPatterns, matchesPathPatterns } from '../lib/path-patterns.js';
+
+const require = createRequire(import.meta.url);
+const { compilePathPatterns, matchesPathPatterns } = require('../lib/path-patterns.cjs') as {
+  compilePathPatterns: (patterns: ReadonlyArray<string> | undefined) => Array<unknown>;
+  matchesPathPatterns: (patterns: ReadonlyArray<unknown>, path: string) => boolean;
+};
 
 const matches = (patterns: ReadonlyArray<string>, path: string) =>
   matchesPathPatterns(compilePathPatterns(patterns), path);
@@ -43,20 +48,4 @@ test('unusable patterns are skipped rather than failing the review', () => {
 
 test('backslash-separated paths match the same patterns', () => {
   expect(matches(['**/__tests__/**'], String.raw`src\__tests__\a.ts`)).toBe(true);
-});
-
-test('the CommonJS and module builds stay in step', () => {
-  const require = createRequire(import.meta.url);
-  const cjs = require('../lib/path-patterns.cjs') as Record<string, unknown>;
-  // Two copies exist so the main process can require it and the renderer can
-  // import it; nothing keeps them honest except this.
-  expect(Object.keys(cjs).sort()).toEqual(
-    ['compilePathPattern', 'compilePathPatterns', 'matchesPathPatterns'].sort(),
-  );
-  const cjsMatches = cjs.matchesPathPatterns as typeof matchesPathPatterns;
-  const cjsCompile = cjs.compilePathPatterns as typeof compilePathPatterns;
-  for (const path of ['a/b.test.ts', 'src/critical.test.ts', 'docs/readme.md', 'src/index.ts']) {
-    const patterns = ['**/*.test.ts', '/docs/', '!src/critical.test.ts'];
-    expect(cjsMatches(cjsCompile(patterns), path)).toBe(matches(patterns, path));
-  }
 });

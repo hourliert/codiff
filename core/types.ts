@@ -239,6 +239,12 @@ export type RepositoryHistory = {
 };
 
 export type RepositoryState = {
+  /**
+   * Files matching the reviewer's `autoViewedPatterns`. Resolved in the main
+   * process, where the config lives, so the walkthrough prompt and the diff
+   * agree about what was ruled off the main path.
+   */
+  autoViewedPaths?: ReadonlyArray<string>;
   branch: string | null;
   codeQualityFindings?: ReadonlyArray<PullRequestCodeQualityFinding>;
   commitMetadata?: CommitMetadata;
@@ -785,7 +791,6 @@ export type CodiffTheme = 'system' | 'light' | 'dark';
 
 export type CodiffPreferences = {
   agentBackend: 'codex' | 'claude' | 'opencode' | 'pi';
-  autoViewedPatterns: ReadonlyArray<string>;
   claudeModel: string;
   codeFontFamily: string;
   codeFontSize: number;

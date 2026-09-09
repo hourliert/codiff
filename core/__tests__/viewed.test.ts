@@ -73,7 +73,7 @@ test('auto-viewed collapses matching files and leaves the rest alone', () => {
   const { applied, viewed } = applyAutoViewed(
     [createFile('a.test.ts', 'fp-a'), createFile('b.ts', 'fp-b')],
     {},
-    ['**/*.test.ts'],
+    ['a.test.ts'],
     pullRequestSource('sha-1'),
   );
 
@@ -84,12 +84,12 @@ test('auto-viewed collapses matching files and leaves the rest alone', () => {
 
 test('a file un-viewed by hand is not re-collapsed on the next load', () => {
   const files = [createFile('a.test.ts', 'fp-a')];
-  const first = applyAutoViewed(files, {}, ['**/*.test.ts'], pullRequestSource('sha-1'));
+  const first = applyAutoViewed(files, {}, ['a.test.ts'], pullRequestSource('sha-1'));
   // The reviewer opens the file to actually read it.
   const reopened = { ...first.viewed };
   delete reopened['a.test.ts'];
 
-  const second = applyAutoViewed(files, reopened, ['**/*.test.ts'], pullRequestSource('sha-1'));
+  const second = applyAutoViewed(files, reopened, ['a.test.ts'], pullRequestSource('sha-1'));
   expect(second.applied).toBe(false);
   expect(second.viewed['a.test.ts']).toBe(undefined);
 });
@@ -98,13 +98,13 @@ test('a new push re-applies the patterns, so files it adds collapse too', () => 
   const before = applyAutoViewed(
     [createFile('a.test.ts', 'fp-a')],
     {},
-    ['**/*.test.ts'],
+    ['a.test.ts'],
     pullRequestSource('sha-1'),
   );
   const after = applyAutoViewed(
     [createFile('a.test.ts', 'fp-a2'), createFile('c.test.ts', 'fp-c')],
     before.viewed,
-    ['**/*.test.ts'],
+    ['a.test.ts', 'c.test.ts'],
     pullRequestSource('sha-2'),
   );
 
@@ -112,11 +112,11 @@ test('a new push re-applies the patterns, so files it adds collapse too', () => 
   expect(after.viewed['c.test.ts']).toBe('fp-c');
 });
 
-test('no patterns means no bookkeeping and no marks', () => {
+test('nothing ruled out means no bookkeeping and no marks', () => {
   const { applied, viewed } = applyAutoViewed(
     [createFile('a.test.ts', 'fp-a')],
     {},
-    [],
+    undefined,
     pullRequestSource('sha-1'),
   );
 
@@ -126,7 +126,7 @@ test('no patterns means no bookkeeping and no marks', () => {
 
 test('auto-viewed marks read back as ordinary whole-file transitions', () => {
   const files = [createFile('a.test.ts', 'fp-a'), createFile('b.ts', 'fp-b')];
-  const { viewed } = applyAutoViewed(files, {}, ['**/*.test.ts'], pullRequestSource('sha-1'));
+  const { viewed } = applyAutoViewed(files, {}, ['a.test.ts'], pullRequestSource('sha-1'));
 
   // This is what decides the confirmation count and what reaches the host, so
   // the bookkeeping key must not leak into it.

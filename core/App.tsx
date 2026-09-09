@@ -312,7 +312,7 @@ export default function App() {
       const { applied, viewed } = applyAutoViewed(
         state.files,
         hostMerged,
-        preferencesRef.current.autoViewedPatterns,
+        state.autoViewedPaths,
         state.source,
       );
       if (applied) {
@@ -755,6 +755,13 @@ export default function App() {
         ...nextState,
         files: sortFiles(nextState.files),
       };
+      // Seed viewed state before the history and walkthrough requests rather
+      // than after them. It depends on neither, and generating a walkthrough for
+      // a large pull request takes minutes -- long enough that a confirmation
+      // queued behind it would arrive once the reviewer had started reading,
+      // and long enough for the diff to render every file the reviewer had
+      // already ruled out.
+      const nextViewed = readHydratedViewed(orderedState);
       const nextHistorySource: ReviewSource | null =
         getReloadHistorySource(reloadSelection, orderedState) ??
         getHistorySource(orderedState.source) ??
@@ -833,7 +840,6 @@ export default function App() {
 
       setWalkthroughLoading(false);
 
-      const nextViewed = readHydratedViewed(orderedState);
       // Reopen the commit view after a reload, but only while it would still be
       // openable (same conditions as openCommitView); e.g. once the commit
       // lands the working tree may be empty and we fall back to the review.
