@@ -28,6 +28,24 @@ const osxNotarize =
       }
     : undefined;
 
+// Signing is opt-in, the same way notarization is. `@electron/osx-sign` has no
+// ad-hoc mode — it searches the keychain for `identity` and throws
+// `No identity found for signing.` when nothing matches, so leaving `osxSign`
+// always-on makes a Developer ID certificate mandatory just to produce a local
+// build. CI only makes linux and win32 artifacts, so nothing published is
+// affected. Ad-hoc sign the result with `codesign -s - --deep --force` to run
+// it locally.
+const osxSign = process.env.APPLE_SIGNING_IDENTITY
+  ? {
+      continueOnError: false,
+      hardenedRuntime: true,
+      identity: process.env.APPLE_SIGNING_IDENTITY,
+      optionsForFile: () => ({
+        entitlements: entitlementsPath,
+      }),
+    }
+  : undefined;
+
 /**
  * @typedef {import('@electron-forge/shared-types').ForgeArch} ForgeArch
  * @typedef {import('@electron-forge/shared-types').ForgeConfig} ForgeConfig
@@ -141,14 +159,7 @@ module.exports = {
     ],
     name: 'Codiff',
     ...(osxNotarize ? { osxNotarize } : {}),
-    osxSign: {
-      continueOnError: false,
-      hardenedRuntime: true,
-      identity: process.env.APPLE_SIGNING_IDENTITY,
-      optionsForFile: () => ({
-        entitlements: entitlementsPath,
-      }),
-    },
+    ...(osxSign ? { osxSign } : {}),
     protocols: [
       {
         name: 'Codiff',
