@@ -6,6 +6,7 @@ import { isNativeInputTarget } from '../../lib/keyboard.ts';
 type UseAppKeyboardShortcutsOptions = {
   keymap: CodiffKeymap;
   navigateHunks: (direction: 1 | -1) => void;
+  onCopyComments: () => void;
   onFocusFileFilter: () => void;
   onOpenDiffSearch: () => void;
   onOpenSelectedFile: () => void;
@@ -18,6 +19,7 @@ type UseAppKeyboardShortcutsOptions = {
 export function useAppKeyboardShortcuts({
   keymap,
   navigateHunks,
+  onCopyComments,
   onFocusFileFilter,
   onOpenDiffSearch,
   onOpenSelectedFile,
@@ -35,6 +37,11 @@ export function useAppKeyboardShortcuts({
       if (matchesShortcut(event, keymap, 'commandBar')) {
         event.preventDefault();
         setCommandBarVisible((current) => !current);
+        return;
+      }
+      if (!isNativeInputTarget(event.target) && matchesShortcut(event, keymap, 'copyComments')) {
+        event.preventDefault();
+        onCopyComments();
         return;
       }
       if (matchesShortcut(event, keymap, 'toggleSidebar')) {
@@ -87,6 +94,7 @@ export function useAppKeyboardShortcuts({
   }, [
     keymap,
     navigateHunks,
+    onCopyComments,
     onFocusFileFilter,
     onOpenDiffSearch,
     onOpenSelectedFile,

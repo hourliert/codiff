@@ -39,6 +39,7 @@ const SHORTCUT_GROUPS: ReadonlyArray<ShortcutGroup> = [
       { action: 'submitComment', label: 'Add comment' },
       { action: 'askAgent', label: 'Ask the agent' },
       { action: 'discardComment', label: 'Discard comment' },
+      { action: 'copyComments', label: 'Copy review comments' },
     ],
     title: 'Comments',
   },

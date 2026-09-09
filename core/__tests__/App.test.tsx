@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vite-plus/test';
+import type { ReviewComment } from '../lib/app-types.ts';
 import { getDiffSearchResult } from '../lib/diff-search.ts';
 import {
   canRenderImagePreview,
@@ -663,6 +664,68 @@ test('review comment markdown includes file and patch context', () => {
   expect(markdown.indexOf('```diff')).toBeLessThan(
     markdown.indexOf('Please double-check this value.'),
   );
+});
+
+test('review comment markdown keeps comments the reviewer already posted', () => {
+  // Posting marks a comment read-only. Filtering on that alone meant a reviewer
+  // who posts as they go exported nothing at all — the hand-off came back empty
+  // precisely because the review went well.
+  const file = {
+    fingerprint: 'posted-comment-export',
+    path: 'src/comment.ts',
+    sections: [
+      {
+        binary: false,
+        id: 'src/comment.ts:unstaged',
+        kind: 'unstaged',
+        patch: '@@ -1 +1 @@\n-old\n+new\n',
+      },
+    ],
+    status: 'modified',
+  } satisfies ChangedFile;
+  const comments = [
+    {
+      author: { login: 'hourliert' },
+      body: 'Mine, already posted.',
+      filePath: 'src/comment.ts',
+      id: 'github:1',
+      isReadOnly: true,
+      lineNumber: 1,
+      sectionId: 'src/comment.ts:unstaged',
+      side: 'additions',
+    },
+    {
+      body: 'Mine, still pending.',
+      filePath: 'src/comment.ts',
+      id: 'draft-1',
+      lineNumber: 1,
+      sectionId: 'src/comment.ts:unstaged',
+      side: 'additions',
+    },
+    {
+      author: { login: 'someone-else' },
+      body: 'Not mine.',
+      filePath: 'src/comment.ts',
+      id: 'github:2',
+      isReadOnly: true,
+      lineNumber: 1,
+      sectionId: 'src/comment.ts:unstaged',
+      side: 'additions',
+    },
+  ] satisfies ReadonlyArray<ReviewComment>;
+
+  const markdown = buildReviewCommentsMarkdown([file], comments, false, undefined, 'hourliert');
+
+  expect(markdown).toContain('Mine, already posted.');
+  expect(markdown).toContain('Mine, still pending.');
+  expect(markdown).not.toContain('Not mine.');
+
+  // Without a viewer login nothing posted can be attributed, so only pending
+  // comments export — the old behaviour, kept as the safe fallback.
+  const anonymous = buildReviewCommentsMarkdown([file], comments, false);
+  expect(anonymous).toContain('Mine, still pending.');
+  expect(anonymous).not.toContain('Mine, already posted.');
+  expect(anonymous).not.toContain('Not mine.');
 });
 
 test('review comment markdown includes file-level comments', () => {

@@ -232,6 +232,10 @@ const mergeConfig = (raw) => {
         typeof rawKeymap.commandBar === 'string'
           ? rawKeymap.commandBar
           : defaults.keymap.commandBar,
+      copyComments:
+        typeof rawKeymap.copyComments === 'string'
+          ? rawKeymap.copyComments
+          : defaults.keymap.copyComments,
       diffSearch:
         typeof rawKeymap.diffSearch === 'string'
           ? rawKeymap.diffSearch

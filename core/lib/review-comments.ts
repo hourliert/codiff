@@ -386,13 +386,32 @@ const getReviewCommentPatchContext = (
   return section.summary?.reason || section.patch.trim() || 'No patch context available.';
 };
 
+/**
+ * Every comment the reviewer wrote, whether or not it has been posted.
+ *
+ * Posting a comment marks it read-only, so filtering on that alone silently
+ * dropped exactly the comments a reviewer who posts as they go had just
+ * written — the export came back empty precisely because the review went well.
+ * A posted comment authored by the signed-in account is still the reviewer's
+ * own and belongs in the hand-off; other people's comments do not.
+ *
+ * Without a `viewerLogin` — a non-GitHub source, or `gh api user` failing — no
+ * posted comment can be attributed, so only pending ones are exported. That is
+ * the old behaviour, kept as the safe fallback.
+ */
+export const isOwnReviewComment = (comment: ReviewComment, viewerLogin?: string) =>
+  !comment.isReadOnly || (!!viewerLogin && comment.author?.login === viewerLogin);
+
 export const buildReviewCommentsMarkdown = (
   files: ReadonlyArray<ChangedFile>,
   comments: ReadonlyArray<ReviewComment>,
   showWhitespace: boolean,
   prefix?: string,
+  viewerLogin?: string,
 ) => {
-  const pendingComments = comments.filter((comment) => !comment.isReadOnly && comment.body.trim());
+  const pendingComments = comments.filter(
+    (comment) => isOwnReviewComment(comment, viewerLogin) && comment.body.trim(),
+  );
   const filesByPath = new Map(files.map((file) => [file.path, file]));
   const orderedComments = pendingComments.sort((left, right) => {
     const leftFileIndex = files.findIndex((file) => file.path === left.filePath);

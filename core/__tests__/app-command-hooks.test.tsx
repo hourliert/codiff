@@ -168,6 +168,7 @@ const keyboardKeymap = {
 };
 
 const noop = () => {};
+const onCopyComments = () => {};
 
 const dispatchKey = (type: 'keydown' | 'keyup', key: string, target: EventTarget = window) => {
   const event = new KeyboardEvent(type, {
@@ -200,6 +201,7 @@ test('app keyboard shortcuts route commands and respect native input and walkthr
       options={{
         keymap: keyboardKeymap,
         navigateHunks,
+        onCopyComments,
         onFocusFileFilter,
         onOpenDiffSearch,
         onOpenSelectedFile,
@@ -262,6 +264,7 @@ test('shortcut help remains visible only while its key chord is held', async () 
       options={{
         keymap: keyboardKeymap,
         navigateHunks: noop,
+        onCopyComments: noop,
         onFocusFileFilter: noop,
         onOpenDiffSearch: noop,
         onOpenSelectedFile: noop,

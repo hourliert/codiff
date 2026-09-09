@@ -1141,6 +1141,26 @@ export default function App() {
     preferencesRef.current = preferences;
   }, [preferences]);
 
+  const buildOwnCommentsMarkdown = useCallback(() => {
+    const currentState = stateRef.current;
+    return currentState
+      ? buildReviewCommentsMarkdown(
+          currentState.files,
+          reviewCommentsRef.current,
+          preferencesRef.current.showWhitespace,
+          preferencesRef.current.reviewCommentsPrefix,
+          currentState.viewerLogin,
+        )
+      : '';
+  }, [reviewCommentsRef]);
+
+  const copyComments = useCallback(() => {
+    const markdown = buildOwnCommentsMarkdown();
+    if (markdown) {
+      void navigator.clipboard.writeText(markdown);
+    }
+  }, [buildOwnCommentsMarkdown]);
+
   useEffect(() => {
     const removeListener = window.codiff.onCopyPendingCommentsRequest(() => {
       const currentState = stateRef.current;
@@ -1153,6 +1173,7 @@ export default function App() {
         reviewCommentsRef.current,
         preferencesRef.current.showWhitespace,
         preferencesRef.current.reviewCommentsPrefix,
+        currentState.viewerLogin,
       );
     });
     return removeListener;
@@ -1241,6 +1262,7 @@ export default function App() {
   const { closeCommandBar, commandBarVisible, shortcutsHelpVisible } = useAppKeyboardShortcuts({
     keymap: codiffConfig.keymap,
     navigateHunks,
+    onCopyComments: copyComments,
     onFocusFileFilter: focusFileFilter,
     onOpenDiffSearch: openDiffSearch,
     onOpenSelectedFile: openSelectedFile,
@@ -1825,6 +1847,7 @@ export default function App() {
             files={orderedFiles}
             reviewCommentsPrefix={preferences.reviewCommentsPrefix}
             showWhitespace={showWhitespace}
+            viewerLogin={state?.viewerLogin}
           />
         }
         context={
