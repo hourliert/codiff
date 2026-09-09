@@ -22,8 +22,22 @@ type PullRequestSource = {
 };
 
 const require = createRequire(import.meta.url);
-const { getReviewWorktreePath, resolveReviewContentRoot } = require('../review-worktree.cjs') as {
+const {
+  getReviewWorktreePath,
+  listReviewWorktrees,
+  measureReviewWorktrees,
+  pruneReviewWorktrees,
+  removeReviewWorktrees,
+  resolveReviewContentRoot,
+} = require('../review-worktree.cjs') as {
   getReviewWorktreePath: (repoRoot: string, source: PullRequestSource) => string;
+  listReviewWorktrees: (repoRoot: string) => ReadonlyArray<{ lastUsed: number; path: string }>;
+  measureReviewWorktrees: (
+    paths: ReadonlyArray<string>,
+    timeoutMs?: number,
+  ) => Promise<number | undefined>;
+  pruneReviewWorktrees: (repoRoot: string, keepPath?: string) => Promise<void>;
+  removeReviewWorktrees: (repoRoot: string) => Promise<number>;
   resolveReviewContentRoot: (
     repoRoot: string,
     source?: { type: string } | PullRequestSource,
@@ -173,5 +187,66 @@ test('local sources and unresolvable reviews never reach a checkout', async () =
     expect(
       await resolveReviewContentRoot(repo, { ...createSource('unused'), headSha: undefined }),
     ).toBe(undefined);
+  });
+});
+
+test('review checkouts can be listed, measured, and removed on request', async () => {
+  const { directory, repo } = await createRepository('codiff-worktree-cleanup-');
+  await using _directory = directory;
+  await using _home = createTemporaryEnvironment({ HOME: directory.path });
+
+  await withGitTestEnvironment(async () => {
+    const base = await commit(repo, 'app.ts', 'base\n', 'base');
+    await run(repo, ['checkout', '-q', '-b', 'feature']);
+    const first = await commit(repo, 'app.ts', 'one\n', 'one');
+    const second = await commit(repo, 'app.ts', 'two\n', 'two');
+    await run(repo, ['checkout', '-q', base]);
+
+    await resolveReviewContentRoot(repo, createSource(first, 1));
+    await resolveReviewContentRoot(repo, createSource(second, 2));
+    expect(listReviewWorktrees(repo)).toHaveLength(2);
+
+    const bytes = await measureReviewWorktrees(
+      listReviewWorktrees(repo).map((entry) => entry.path),
+    );
+    expect(bytes).toBeGreaterThan(0);
+
+    expect(await removeReviewWorktrees(repo)).toBe(2);
+    expect(listReviewWorktrees(repo)).toHaveLength(0);
+    // The administrative entries go with the directories, so git no longer
+    // believes it has checkouts that are not there.
+    expect(
+      (await run(repo, ['worktree', 'list', '--porcelain'])).stdout.match(/^worktree /gmu),
+    ).toHaveLength(1);
+  });
+});
+
+test('measuring gives up rather than delaying a quit', async () => {
+  expect(await measureReviewWorktrees([], 1)).toBe(0);
+  expect(await measureReviewWorktrees(['/nonexistent-codiff-worktree'], 1500)).toBeUndefined();
+});
+
+test('a sweep with nothing to keep retires down to the full cap', async () => {
+  const { directory, repo } = await createRepository('codiff-worktree-sweep-');
+  await using _directory = directory;
+  await using _home = createTemporaryEnvironment({ HOME: directory.path });
+
+  await withGitTestEnvironment(async () => {
+    const base = await commit(repo, 'app.ts', 'base\n', 'base');
+    await run(repo, ['checkout', '-q', '-b', 'feature']);
+    const heads: Array<string> = [];
+    for (const index of [1, 2, 3]) {
+      heads.push(await commit(repo, 'app.ts', `revision ${index}\n`, `push ${index}`));
+    }
+    await run(repo, ['checkout', '-q', base]);
+    for (const [index, head] of heads.entries()) {
+      await resolveReviewContentRoot(repo, createSource(head, index + 1));
+    }
+
+    // Creating the third retired nothing, because the cap counts the one in
+    // use. A sweep on its own has no checkout to keep, so all three stay.
+    expect(listReviewWorktrees(repo)).toHaveLength(3);
+    await pruneReviewWorktrees(repo);
+    expect(listReviewWorktrees(repo)).toHaveLength(3);
   });
 });

@@ -138,6 +138,12 @@
           "type": "boolean",
           "default": false,
           "description": "Wrap long diff lines instead of using horizontal scrolling."
+        },
+        "worktreeCleanup": {
+          "type": "string",
+          "enum": ["ask", "always", "never"],
+          "default": "ask",
+          "description": "Whether the separate checkouts Codiff makes to show a pull request's files are removed when it quits. 'ask' prompts once and records your answer here. Checkouts are rebuilt on demand, so removing them only costs the time to make them again."
         }
       }
     },

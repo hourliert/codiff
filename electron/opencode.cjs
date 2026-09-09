@@ -203,7 +203,10 @@ const readOpenCodeServerText = (output) => {
 /**
  * @param {unknown} input
  * @param {string} sessionId
- * @param {(phase: import('../core/types.ts').WalkthroughProgressPhase) => void} onProgress
+ * @param {(
+ *   phase: import('../core/types.ts').WalkthroughProgressPhase,
+ *   delta?: string,
+ * ) => void} onProgress
  * @param {{assistantMessageIds: Set<string>; textParts: Map<string, string>}} state
  */
 const handleOpenCodeProgressEvent = (input, sessionId, onProgress, state) => {
@@ -255,14 +258,17 @@ const handleOpenCodeProgressEvent = (input, sessionId, onProgress, state) => {
   ) {
     const partId = String(properties.partID || state.textParts.size);
     state.textParts.set(partId, `${state.textParts.get(partId) || ''}${properties.delta}`);
-    onProgress('response-received');
+    onProgress('response-received', properties.delta);
   }
 };
 
 /**
  * @param {Response} response
  * @param {string} sessionId
- * @param {(phase: import('../core/types.ts').WalkthroughProgressPhase) => void} onProgress
+ * @param {(
+ *   phase: import('../core/types.ts').WalkthroughProgressPhase,
+ *   delta?: string,
+ * ) => void} onProgress
  * @param {{assistantMessageIds: Set<string>; textParts: Map<string, string>}} state
  */
 const consumeOpenCodeEventStream = async (response, sessionId, onProgress, state) => {
@@ -326,7 +332,10 @@ const getOpenCodeServerModel = (model) => {
  *   model?: string;
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
  *   onPartialText?: (delta: string) => void;
- *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
+ *   onProgress?: (
+ *     phase: import('../core/types.ts').WalkthroughProgressPhase,
+ *     delta?: string,
+ *   ) => void;
  *   timeoutMs?: number;
  * }} [options]
  */
@@ -574,7 +583,9 @@ const runOpenCode = async (
       const eventStream = consumeOpenCodeEventStream(
         eventResponse,
         sessionId,
-        options.onProgress,
+        // The server transport is only chosen when progress was asked for, but
+        // the stream reader should not depend on that having stayed true.
+        options.onProgress ?? (() => {}),
         progressState,
       ).catch(() => {});
 

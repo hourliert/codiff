@@ -1,4 +1,4 @@
-import type { ChangedFile } from '../../types.ts';
+import type { ChangedFile, WalkthroughProgressEvent } from '../../types.ts';
 
 type ChangedFileOptions = {
   fingerprint?: string;
@@ -32,3 +32,16 @@ export const createChangedFile = (
 
 export const createChangedFileWithPatch = (path: string, patch: string) =>
   createChangedFile(path, { patch });
+
+export const createWalkthroughProgress = (
+  phase: WalkthroughProgressEvent['phase'],
+  overrides: Partial<WalkthroughProgressEvent> = {},
+): WalkthroughProgressEvent => ({
+  chapters: 0,
+  deltas: 1,
+  outputCharacters: 0,
+  phase,
+  stops: 0,
+  thinkingCharacters: 0,
+  ...overrides,
+});

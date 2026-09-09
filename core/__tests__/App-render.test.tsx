@@ -23,7 +23,7 @@ import type {
   ReviewSource,
   WalkthroughProgressEvent,
 } from '../types.ts';
-import { createChangedFile } from './helpers/fixtures.ts';
+import { createChangedFile, createWalkthroughProgress } from './helpers/fixtures.ts';
 import { renderReact, setInputValue, waitFor } from './helpers/react.tsx';
 
 const reactActEnvironment = globalThis as typeof globalThis & {
@@ -3697,12 +3697,12 @@ test('walkthrough progress events replace the loading line without exposing agen
     expect(container.textContent).toContain('Generating walkthrough…');
   });
   await act(async () => {
-    onProgress?.({ phase: 'agent-generation' });
+    onProgress?.(createWalkthroughProgress('agent-generation'));
   });
   expect(container.textContent).toContain('Analyzing changes…');
   expect(container.textContent).not.toContain('Generating walkthrough…');
   await act(async () => {
-    onProgress?.({ phase: 'response-received' });
+    onProgress?.(createWalkthroughProgress('response-received'));
   });
   expect(container.textContent).toContain('Building walkthrough…');
   expect(container.querySelector('.wt-generation')).toBeNull();

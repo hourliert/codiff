@@ -38,7 +38,10 @@ const CLAUDE_NOT_LOGGED_IN_MESSAGE =
  *   commandTransport?: import('./agent-command.cjs').AgentCommandTransport;
  *   model?: string;
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
- *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
+ *   onProgress?: (
+ *     phase: import('../core/types.ts').WalkthroughProgressPhase,
+ *     delta?: string,
+ *   ) => void;
  *   timeoutMs?: number;
  * }} ClaudeOptions
  */
@@ -190,11 +193,19 @@ const createClaudeStreamParser = (onProgress) => {
     if (streamEvent?.type !== 'content_block_delta') {
       return;
     }
-    const deltaType = streamEvent.delta?.type;
+    const delta = streamEvent.delta;
+    const deltaType = delta?.type;
     if (deltaType === 'thinking_delta') {
-      onProgress?.('agent-generation');
-    } else if (deltaType === 'text_delta' || deltaType === 'input_json_delta') {
-      onProgress?.('response-received');
+      onProgress?.('agent-generation', typeof delta.thinking === 'string' ? delta.thinking : '');
+    } else if (deltaType === 'text_delta') {
+      onProgress?.('response-received', typeof delta.text === 'string' ? delta.text : '');
+    } else if (deltaType === 'input_json_delta') {
+      // A `--json-schema` run returns its answer as the input of a structured
+      // output tool call, so this — not `text_delta` — is the response itself.
+      onProgress?.(
+        'response-received',
+        typeof delta.partial_json === 'string' ? delta.partial_json : '',
+      );
     }
   };
 

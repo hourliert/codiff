@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WalkthroughProgressPhase } from '../../../types.ts';
+import type { WalkthroughProgressEvent, WalkthroughProgressPhase } from '../../../types.ts';
 
 export const walkthroughResponseLabels = [
   'Building walkthrough…',
@@ -13,24 +13,97 @@ export const walkthroughResponseLabels = [
 export const nextWalkthroughResponseLabelIndex = (current: number) =>
   (current + 1) % walkthroughResponseLabels.length;
 
+export type WalkthroughProgressState = Omit<WalkthroughProgressEvent, 'phase'> & {
+  phase: WalkthroughProgressPhase | null;
+  responseLabelIndex: number;
+  stageRevision: number;
+  updatedAt: number;
+};
+
+export const initialWalkthroughProgress: WalkthroughProgressState = {
+  chapters: 0,
+  deltas: 0,
+  outputCharacters: 0,
+  phase: null,
+  responseLabelIndex: -1,
+  stageRevision: 0,
+  stops: 0,
+  thinkingCharacters: 0,
+  updatedAt: 0,
+};
+
 const TIMER_THRESHOLD_SECONDS = 3;
+
+/**
+ * How long without a delta before the display stops claiming activity. Long
+ * enough to ride out an ordinary gap between tokens, short enough that a stall
+ * is visible while the reviewer is still looking at it.
+ */
+const IDLE_THRESHOLD_MS = 2500;
+
+/** When a gap stops being a pause and is worth naming. */
+const STALLED_THRESHOLD_MS = 20_000;
+
+const formatCount = (value: number) =>
+  value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+
+const formatPlural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * What the agent has produced, in the most specific terms available.
+ *
+ * The structure counts are the only true measure of progress, because they have
+ * a denominator the reviewer can feel. Character counts are the fallback: they
+ * cannot say how far along the work is, only that it is still happening, which
+ * is the next best thing to know.
+ */
+const getDetail = ({
+  chapters,
+  outputCharacters,
+  phase,
+  stops,
+  thinkingCharacters,
+}: WalkthroughProgressState) => {
+  if (chapters > 0 || stops > 0) {
+    return stops > 0
+      ? `${formatPlural(chapters, 'chapter')} · ${formatPlural(stops, 'stop')}`
+      : formatPlural(chapters, 'chapter');
+  }
+  if (phase === 'agent-generation' && thinkingCharacters > 0) {
+    return `${formatCount(thinkingCharacters)} reasoned`;
+  }
+  if (outputCharacters > 0) {
+    return `${formatCount(outputCharacters)} written`;
+  }
+  return '';
+};
 
 export function WalkthroughProgress({
   phase,
+  progress,
   responseLabelIndex,
   stageRevision,
 }: {
   phase: WalkthroughProgressPhase | null;
+  progress?: WalkthroughProgressState;
   responseLabelIndex: number;
   stageRevision: number;
 }) {
-  const [timerState, setTimerState] = useState({ elapsedSeconds: 0, stageRevision });
+  // Left at zero rather than read from the clock, which render may not do. The
+  // first tick fills it in, and until then nothing has had time to go quiet.
+  const [timerState, setTimerState] = useState({
+    elapsedSeconds: 0,
+    now: 0,
+    stageRevision,
+  });
 
   useEffect(() => {
     const startedAt = Date.now();
     const timer = window.setInterval(() => {
+      const now = Date.now();
       setTimerState({
-        elapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
+        elapsedSeconds: Math.floor((now - startedAt) / 1000),
+        now,
         stageRevision,
       });
     }, 250);
@@ -40,21 +113,38 @@ export function WalkthroughProgress({
   const elapsedSeconds = timerState.stageRevision === stageRevision ? timerState.elapsedSeconds : 0;
   const showTimer = elapsedSeconds >= TIMER_THRESHOLD_SECONDS;
   const label =
-    phase === 'agent-generation'
-      ? 'Analyzing changes…'
-      : phase === 'response-received'
-        ? walkthroughResponseLabels[Math.abs(responseLabelIndex) % walkthroughResponseLabels.length]
-        : 'Generating walkthrough…';
+    phase === 'preparing-files'
+      ? 'Preparing files…'
+      : phase === 'agent-generation'
+        ? 'Analyzing changes…'
+        : phase === 'response-received'
+          ? walkthroughResponseLabels[
+              Math.abs(responseLabelIndex) % walkthroughResponseLabels.length
+            ]
+          : 'Generating walkthrough…';
+
+  // Before the first event there is nothing to be idle about: the run has not
+  // reported anything yet, which is not the same as having gone quiet.
+  const silentMs = progress?.updatedAt && timerState.now ? timerState.now - progress.updatedAt : 0;
+  const idle = silentMs >= IDLE_THRESHOLD_MS;
+  const detail = progress
+    ? silentMs >= STALLED_THRESHOLD_MS
+      ? `no output for ${Math.floor(silentMs / 1000)}s`
+      : getDetail(progress)
+    : '';
 
   return (
-    <span aria-live="polite" className="walkthrough-progress" role="status">
-      <span className="walkthrough-progress-label">{label}</span>
-      <span
-        aria-hidden={!showTimer}
-        className={`walkthrough-progress-timer${showTimer ? ' visible' : ''}`}
-      >
-        {showTimer ? `${elapsedSeconds}s` : '0s'}
+    <span aria-live="polite" className={`walkthrough-progress${idle ? ' idle' : ''}`} role="status">
+      <span className="walkthrough-progress-line">
+        <span className="walkthrough-progress-label">{label}</span>
+        <span
+          aria-hidden={!showTimer}
+          className={`walkthrough-progress-timer${showTimer ? ' visible' : ''}`}
+        >
+          {showTimer ? `${elapsedSeconds}s` : '0s'}
+        </span>
       </span>
+      {detail ? <span className="walkthrough-progress-detail">{detail}</span> : null}
     </span>
   );
 }

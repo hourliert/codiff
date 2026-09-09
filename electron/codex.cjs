@@ -45,7 +45,10 @@ const CODEX_NOT_FOUND_MESSAGE =
  *     };
  *   }) => void;
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
- *   onProgress?: (phase: import('../core/types.ts').WalkthroughProgressPhase) => void;
+ *   onProgress?: (
+ *     phase: import('../core/types.ts').WalkthroughProgressPhase,
+ *     delta?: string,
+ *   ) => void;
  *   effort?: string;
  *   timeoutMs?: number;
  * }} CodexOptions
@@ -628,7 +631,10 @@ const runCodex = async (
           return;
         }
         if (method === 'item/agentMessage/delta') {
-          options.onProgress?.('response-received');
+          options.onProgress?.(
+            'response-received',
+            typeof params?.delta === 'string' ? params.delta : '',
+          );
           if (typeof params?.delta === 'string') {
             streamedMessage += params.delta;
           }

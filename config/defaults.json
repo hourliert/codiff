@@ -22,7 +22,8 @@
     "showWhitespace": false,
     "theme": "system",
     "walkthroughPrompt": "",
-    "wordWrap": false
+    "wordWrap": false,
+    "worktreeCleanup": "ask"
   },
   "keymap": {
     "askAgent": "Mod+Alt+Enter",

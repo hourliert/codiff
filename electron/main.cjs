@@ -82,7 +82,13 @@ const {
 const { createSkillInstaller } = require('./main/agent-skill.cjs');
 const { createEditorOpener } = require('./main/editor.cjs');
 const { createDefinitionSearchCoordinator } = require('./definition-search.cjs');
-const { resolveReviewContentRoot } = require('./review-worktree.cjs');
+const {
+  listReviewWorktrees,
+  measureReviewWorktrees,
+  pruneReviewWorktrees,
+  removeReviewWorktrees,
+  resolveReviewContentRoot,
+} = require('./review-worktree.cjs');
 const { compilePathPatterns, matchesPathPatterns } = require('../core/lib/path-patterns.cjs');
 const { createTerminalHelper } = require('./main/terminal-helper.cjs');
 const {
@@ -273,6 +279,162 @@ const getWindowReviewContentRoot = (webContentsId) =>
     getWindowRepositoryRoot(webContentsId),
     windowLaunchOptions.get(webContentsId)?.source,
   );
+
+/**
+ * Repositories this session opened a pull request against, and so may have
+ * built a checkout for. Cleanup asks about these rather than sweeping the whole
+ * store, so quitting never proposes removing another project's work.
+ *
+ * @type {Set<string>}
+ */
+const reviewedRepositories = new Set();
+
+/** @param {number} bytes */
+const formatDiskSize = (bytes) => {
+  const gigabytes = bytes / 1024 ** 3;
+  return gigabytes >= 1
+    ? `${gigabytes.toFixed(1)} GB`
+    : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+};
+
+/**
+ * Every review checkout this session may have created, across repositories.
+ *
+ * @returns {ReadonlyArray<{repoRoot: string; worktrees: ReadonlyArray<string>}>}
+ */
+const listSessionReviewWorktrees = () =>
+  [...reviewedRepositories]
+    .map((repoRoot) => ({
+      repoRoot,
+      worktrees: listReviewWorktrees(repoRoot).map((entry) => entry.path),
+    }))
+    .filter((entry) => entry.worktrees.length > 0);
+
+/**
+ * Offer to reclaim the disk the review checkouts are holding.
+ *
+ * A monorepo checkout is most of a gigabyte and the reviewer has no reason to
+ * know it exists, so leaving them to find it themselves is how a tool quietly
+ * fills a disk. Answering is optional: the checkouts rebuild on demand.
+ *
+ * @returns {Promise<void>}
+ */
+const cleanUpReviewWorktrees = async () => {
+  const repositories = listSessionReviewWorktrees();
+  if (repositories.length === 0) {
+    return;
+  }
+
+  if (config.settings.worktreeCleanup === 'ask') {
+    const paths = repositories.flatMap((entry) => entry.worktrees);
+    const bytes = await measureReviewWorktrees(paths);
+    const count = paths.length === 1 ? '1 review checkout' : `${paths.length} review checkouts`;
+    const { checkboxChecked, response } = await dialog.showMessageBox({
+      buttons: ['Remove', 'Keep'],
+      cancelId: 1,
+      checkboxLabel: 'Remember this choice',
+      defaultId: 0,
+      detail:
+        'Codiff checks out a pull request separately so that opening a file shows the revision under review. Removing them frees the space; the next review rebuilds what it needs.',
+      message: bytes ? `Remove ${count} (${formatDiskSize(bytes)})?` : `Remove ${count}?`,
+      type: 'question',
+    });
+
+    if (checkboxChecked) {
+      updateConfigSettings({ worktreeCleanup: response === 0 ? 'always' : 'never' });
+    }
+    if (response !== 0) {
+      return;
+    }
+  }
+
+  for (const entry of repositories) {
+    try {
+      await removeReviewWorktrees(entry.repoRoot);
+    } catch {
+      // A checkout that will not go away is retired by the next sweep instead.
+    }
+  }
+};
+
+/**
+ * Remove review checkouts on request, rather than waiting for a quit or for one
+ * to age out. Always confirms and always reports: this is a destructive action
+ * the reviewer asked for by name, so silence would leave them guessing whether
+ * anything happened.
+ *
+ * @returns {Promise<void>}
+ */
+const removeReviewCheckouts = async () => {
+  const repositories = [
+    ...new Set([...reviewedRepositories, ...windowRepositories.values(), getLaunchPath()]),
+  ]
+    .map((repoRoot) => ({ repoRoot, worktrees: listReviewWorktrees(repoRoot) }))
+    .filter((entry) => entry.worktrees.length > 0);
+  const paths = repositories.flatMap((entry) => entry.worktrees.map((entry) => entry.path));
+
+  if (paths.length === 0) {
+    await dialog.showMessageBox({
+      message: 'No review checkouts to remove.',
+      type: 'info',
+    });
+    return;
+  }
+
+  const bytes = await measureReviewWorktrees(paths);
+  const count = paths.length === 1 ? '1 review checkout' : `${paths.length} review checkouts`;
+  const { response } = await dialog.showMessageBox({
+    buttons: ['Remove', 'Cancel'],
+    cancelId: 1,
+    defaultId: 0,
+    detail: paths.join('\n'),
+    message: bytes ? `Remove ${count} (${formatDiskSize(bytes)})?` : `Remove ${count}?`,
+    type: 'question',
+  });
+  if (response !== 0) {
+    return;
+  }
+
+  let removed = 0;
+  for (const entry of repositories) {
+    try {
+      removed += await removeReviewWorktrees(entry.repoRoot);
+    } catch {
+      // Reported below as a shortfall rather than as a failed operation.
+    }
+  }
+
+  await dialog.showMessageBox({
+    message:
+      removed === paths.length
+        ? `Removed ${count}.`
+        : `Removed ${removed} of ${paths.length} review checkouts.`,
+    type: 'info',
+  });
+};
+
+/**
+ * Materialize the review's files while the reviewer is already waiting.
+ *
+ * Otherwise the first attempt to open a file pays for the checkout, and pays
+ * for it silently: opening a file reports nothing, so a fetch and a checkout of
+ * a large repository read as the application having hung.
+ *
+ * @param {RepositoryState} state
+ * @param {(phase: import('../core/types.ts').WalkthroughProgressPhase) => void} reportProgress
+ */
+const warmReviewContentRoot = (state, reportProgress) => {
+  if (state.source?.type !== 'pull-request') {
+    return;
+  }
+
+  reviewedRepositories.add(state.root);
+  reportProgress('preparing-files');
+  void resolveReviewContentRoot(state.root, state.source).catch(() => {
+    // Opening a file resolves this again and reports the failure there, where
+    // the reviewer asked for something and can be told it did not work.
+  });
+};
 
 /** @param {number} webContentsId */
 const getMarkdownDocumentContext = (webContentsId) => ({
@@ -679,6 +841,12 @@ const buildApplicationMenu = () =>
                   },
                   label: 'Open Config File...',
                 },
+                {
+                  click: () => {
+                    void removeReviewCheckouts();
+                  },
+                  label: 'Remove Review Checkouts...',
+                },
                 { type: 'separator' },
                 {
                   click:
@@ -718,6 +886,12 @@ const buildApplicationMenu = () =>
                     void openConfigFile();
                   },
                   label: 'Open Config File...',
+                },
+                {
+                  click: () => {
+                    void removeReviewCheckouts();
+                  },
+                  label: 'Remove Review Checkouts...',
                 },
                 { type: 'separator' },
                 {
@@ -912,6 +1086,8 @@ const buildApplicationMenu = () =>
 let copyingPendingCommentsBeforeQuit = false;
 let quitting = false;
 let quitAfterCopyingPendingComments = false;
+let finishingWorkBeforeQuit = false;
+let quitAfterCleaningUpWorktrees = false;
 
 ipcMain.on(
   'codiff:copyPendingCommentsResult',
@@ -1364,6 +1540,10 @@ if (squirrelStartup || !lock) {
   });
 
   app.on('ready', () => {
+    // Retiring on start as well as on create is what keeps the store bounded
+    // for a reviewer who works through a burst of pull requests and then stops:
+    // nothing else would ever sweep what that burst left behind.
+    void pruneReviewWorktrees(getLaunchPath()).catch(() => {});
     migrateFromPreferences(app.getPath('userData'), normalizeOpenAIModel);
     const shouldDetectInitialAgent = !existsSync(getConfigPath());
     config = readConfig();
@@ -1446,25 +1626,51 @@ if (squirrelStartup || !lock) {
     const windows = BrowserWindow.getAllWindows().filter(
       (window) => !window.isDestroyed() && !window.webContents.isDestroyed(),
     );
+    const copyComments =
+      config.settings.copyCommentsOnClose && !quitAfterCopyingPendingComments && windows.length > 0;
+    const cleanUpWorktrees =
+      config.settings.worktreeCleanup !== 'never' &&
+      !quitAfterCleaningUpWorktrees &&
+      listSessionReviewWorktrees().length > 0;
 
-    if (config.settings.copyCommentsOnClose && !quitAfterCopyingPendingComments && windows.length) {
-      event.preventDefault();
-      if (copyingPendingCommentsBeforeQuit) {
-        return;
-      }
-
-      copyingPendingCommentsBeforeQuit = true;
-      void pendingCommentsClipboardController
-        .copyPendingCommentsToClipboard(windows)
-        .finally(() => {
-          quitAfterCopyingPendingComments = true;
-          quitting = true;
-          app.quit();
-        });
+    if (!copyComments && !cleanUpWorktrees) {
+      quitting = true;
       return;
     }
 
-    quitting = true;
+    // Both of these finish asynchronously and then quit for real. They have to
+    // share one deferral: a second `preventDefault` on the re-entrant quit
+    // would cancel the first one's, and the application would never close.
+    event.preventDefault();
+    if (finishingWorkBeforeQuit) {
+      return;
+    }
+
+    finishingWorkBeforeQuit = true;
+    void (async () => {
+      if (copyComments) {
+        copyingPendingCommentsBeforeQuit = true;
+        try {
+          await pendingCommentsClipboardController.copyPendingCommentsToClipboard(windows);
+        } catch {
+          // Quitting must not be blocked by a clipboard that would not take it.
+        }
+        quitAfterCopyingPendingComments = true;
+      }
+
+      if (cleanUpWorktrees) {
+        try {
+          await cleanUpReviewWorktrees();
+        } catch {
+          // Same: disk left in use is better than an application that will not quit.
+        }
+        quitAfterCleaningUpWorktrees = true;
+      }
+    })().finally(() => {
+      finishingWorkBeforeQuit = false;
+      quitting = true;
+      app.quit();
+    });
   });
 }
 
@@ -1633,6 +1839,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       repositoryPath,
       source || launchOptions?.source,
     );
+    warmReviewContentRoot(state, reportProgress);
     const agent = resolveWindowAgent(event.sender.id);
     const walkthroughFile = launchOptions?.walkthroughFile;
     if (walkthroughFile) {
