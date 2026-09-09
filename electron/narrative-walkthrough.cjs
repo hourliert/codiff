@@ -840,7 +840,7 @@ const buildNarrativeWalkthroughRequest = (
     hunkIdByAlias,
     prompt: `You are authoring Codiff's narrative walkthrough JSON.
 
-Return JSON only. Do not inspect the repository or run shell commands; use only the optional conversation context and repository digest below.
+Do not inspect the repository or run shell commands; use only the optional conversation context and repository digest below.
 If source.description is present, treat it as author-written PR/MR intent and orientation, not proof of behavior. The changed files, patches, and hunk data remain the source of truth for what changed.
 
 ${buildWalkthroughSizingGuidance(state)}

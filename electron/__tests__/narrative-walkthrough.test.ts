@@ -506,7 +506,7 @@ test('prompts generated walkthroughs with custom user guidance without replacing
 
   expect(prompt).toContain('Custom walkthrough instructions:');
   expect(prompt).toContain('Answer in Japanese and use concise reviewer-facing explanations.');
-  expect(prompt).toContain('Return JSON only.');
+  expect(prompt).toContain('Do not inspect the repository or run shell commands');
   expect(prompt).toContain('Repository change digest:');
 });
 

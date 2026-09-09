@@ -71,9 +71,9 @@ Rewrite the message so it describes exactly the change represented by the select
 Your job:
 - Read the real diff for the selected files in ${state.root} — run \`git diff -- <paths>\` and \`git diff --staged -- <paths>\` for the selectedFiles paths. Use what you read, not just the digest.
 - Return an updated \`subject\` (imperative mood, under 72 characters) and a \`body\` of one to three short paragraphs of prose.
-- The body is prose: describe the change as a whole and why it is made. Do NOT enumerate files or write a bullet list.
-- Do not mention or describe any file under "droppedFiles" — they are NOT in this commit.
-- Do not hedge. Avoid "appears", "seems", "might", "likely", "probably", "I think". State what the change does.
+- The body is prose: describe the change as a whole and why it is made. Do not enumerate files or write a bullet list.
+- Do not mention or describe any file under "droppedFiles" — they are not in this commit.
+- State what the change does, as a conclusion drawn from the diff you read.
 - Do not invent changes, requirements, or files outside the selected set.
 
 Repository change digest:
