@@ -152,7 +152,7 @@ test('maps Claude thinking and text deltas to semantic walkthrough progress', as
   expect(calls[0].args).toContain('--include-partial-messages');
 });
 
-test('forwards the configured Claude effort, defaulting to medium', async () => {
+test('forwards a configured Claude effort and otherwise inherits', async () => {
   const run = async (effort?: string) => {
     const { calls, transport } = createCommandTransport(({ close, stdin, stdout }) => {
       stdin.on('finish', () => {
@@ -169,14 +169,19 @@ test('forwards the configured Claude effort, defaulting to medium', async () => 
     ).resolves.toBe('{"version":1}');
 
     const args = calls[0].args;
-    return args[args.indexOf('--effort') + 1];
+    const at = args.indexOf('--effort');
+    return at === -1 ? null : args[at + 1];
   };
 
-  expect(await run()).toBe('medium');
+  // Unset means inherit: Claude Code's own configuration, including the
+  // effortLevel and per-model overrides in ~/.claude/settings.json, must win.
+  expect(await run()).toBeNull();
+  expect(await run('')).toBeNull();
+  // A value Claude cannot express falls back to inheriting rather than
+  // overriding with something the user never asked for.
+  expect(await run('nonsense')).toBeNull();
   expect(await run('max')).toBe('max');
-  // Codex tops out at 'high', so a shared config value it cannot express must
-  // degrade to the default rather than reach the CLI.
-  expect(await run('nonsense')).toBe('medium');
+  expect(await run('high')).toBe('high');
 });
 
 test('maps Claude structured output deltas to response progress', async () => {

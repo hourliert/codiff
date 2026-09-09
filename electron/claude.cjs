@@ -20,7 +20,11 @@ const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
 const FALLBACK_CLAUDE_MODEL = 'claude-sonnet-5';
 const CLAUDE_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
 const CLAUDE_EFFORT_IDS = new Set(CLAUDE_EFFORTS);
-const DEFAULT_CLAUDE_EFFORT = 'medium';
+// Empty means "inherit". An explicit --effort beats the user's own
+// ~/.claude/settings.json effortLevel (including its per-model overrides), so
+// passing a value by default would silently override a setting Codiff knows
+// nothing about. Codiff only sets effort when asked to.
+const DEFAULT_CLAUDE_EFFORT = '';
 const CLAUDE_NOT_FOUND_CODE = 'CLAUDE_NOT_FOUND';
 const CLAUDE_NOT_FOUND_MESSAGE =
   'Claude Code CLI was not found. Install Claude Code and verify `claude --version` works in Terminal. Codiff searches PATH, ~/.local/bin/claude, /opt/homebrew/bin/claude, and /usr/local/bin/claude. If Claude Code is installed somewhere else, launch Codiff with `CODIFF_CLAUDE_PATH=/absolute/path/to/claude codiff -w`.';
@@ -69,7 +73,7 @@ const CLAUDE_MODELS = Object.freeze([
 ]);
 const CLAUDE_MODEL_IDS = new Set(CLAUDE_MODELS.map((model) => model.id));
 
-/** @param {unknown} value */
+/** @param {unknown} value @returns {string} '' when Claude Code should decide. */
 const normalizeClaudeEffort = (value) =>
   typeof value === 'string' && CLAUDE_EFFORT_IDS.has(value) ? value : DEFAULT_CLAUDE_EFFORT;
 
@@ -269,6 +273,7 @@ const runClaude = async (
           getClaudeCommand,
         );
         const streamProgress = Boolean(options.onProgress);
+        const claudeEffort = normalizeClaudeEffort(options.effort);
         const claudeArgs = [
           '-p',
           '--output-format',
@@ -278,8 +283,7 @@ const runClaude = async (
           JSON.stringify(schema),
           '--model',
           claudeModel,
-          '--effort',
-          normalizeClaudeEffort(options.effort),
+          ...(claudeEffort ? ['--effort', claudeEffort] : []),
           '--add-dir',
           repoRoot,
           '--permission-mode',
