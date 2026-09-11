@@ -3276,7 +3276,6 @@ test('refreshing changed files automatically regenerates the walkthrough', async
     expect(container.textContent).not.toContain('Changed after the walkthrough was generated.');
   });
   expect(getNarrativeWalkthrough).toHaveBeenLastCalledWith(repositoryState.source, {
-    axis: 'subsystem',
     force: true,
     previousWalkthrough: initialWalkthrough,
   });
@@ -3295,7 +3294,6 @@ test('refreshing changed files automatically regenerates the walkthrough', async
     expect(container.textContent).toContain('later.ts');
   });
   expect(getNarrativeWalkthrough).toHaveBeenLastCalledWith(repositoryState.source, {
-    axis: 'subsystem',
     force: true,
     previousWalkthrough: addedWalkthrough,
   });
@@ -3553,7 +3551,6 @@ test('committing and then editing again clears and regenerates the walkthrough',
     expect(container.querySelector('.wt-stop-block')).toBeNull();
   });
   expect(getNarrativeWalkthrough).toHaveBeenLastCalledWith(repositoryState.source, {
-    axis: 'subsystem',
     force: true,
     previousWalkthrough: undefined,
   });

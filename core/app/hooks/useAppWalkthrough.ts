@@ -13,7 +13,6 @@ import type {
   NarrativeWalkthroughRequestOptions,
   RepositoryState,
   SharedWalkthroughSnapshot,
-  WalkthroughAxis,
   WalkthroughCommitMessageRequest,
   WalkthroughCommitRequest,
 } from '../../types.ts';
@@ -47,12 +46,6 @@ export function useAppWalkthrough({
   const [narrativeWalkthrough, setNarrativeWalkthrough] = useState<NarrativeWalkthrough | null>(
     null,
   );
-  // Subsystem is the opening carving because it is the one that can be read off
-  // the file paths, which leaves the agent's attention for the prose. The
-  // concept pass is generated only if the reviewer asks for it, so a review that
-  // never switches costs one generation rather than two.
-  const [walkthroughAxis, setWalkthroughAxis] = useState<WalkthroughAxis>('subsystem');
-  const walkthroughByAxisRef = useRef(new Map<WalkthroughAxis, NarrativeWalkthrough>());
   const [shareWalkthroughEnabled, setShareWalkthroughEnabled] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('tree');
   const [walkthroughError, setWalkthroughError] = useState<WalkthroughError | null>(null);
@@ -159,7 +152,6 @@ export function useAppWalkthrough({
       walkthroughRequestRef.current = request;
       const sourceKey = getSourceKey(source);
       const stateGeneration = stateGenerationRef.current;
-      const axis = options?.axis ?? 'subsystem';
       const isCurrentState = () =>
         walkthroughRequestRef.current === request &&
         stateGenerationRef.current === stateGeneration &&
@@ -167,14 +159,13 @@ export function useAppWalkthrough({
       startWalkthroughLoading();
       setWalkthroughError(null);
       window.codiff
-        .getNarrativeWalkthrough(source, { ...options, axis })
+        .getNarrativeWalkthrough(source, options)
         .then((result) => {
           if (!isCurrentState()) {
             return;
           }
 
           if (result.status === 'ready') {
-            walkthroughByAxisRef.current.set(axis, result.walkthrough);
             setNarrativeWalkthrough(result.walkthrough);
             if (sidebarModeRef.current === 'walkthrough') {
               setSidebarMode('walkthrough');
@@ -217,47 +208,16 @@ export function useAppWalkthrough({
       setNarrativeWalkthrough(null);
       setWalkthroughError(null);
       setWalkthroughLoading(false);
-      // Both carvings describe the diff that just moved, so neither survives it.
-      walkthroughByAxisRef.current.clear();
       if (nextState.files.length === 0) {
         return;
       }
 
       loadNarrativeWalkthrough(nextState.source, {
-        axis: walkthroughAxis,
         force: true,
         previousWalkthrough: previousWalkthrough ?? undefined,
       });
     },
-    [loadNarrativeWalkthrough, walkthroughAxis],
-  );
-
-  /**
-   * Switching carving keeps the reviewer's place: the file they marked viewed
-   * under one axis is viewed under the other, because viewed state is keyed on
-   * the file rather than on the stop that happens to cover it. A carving already
-   * generated is served from memory; the other is generated once and then kept.
-   */
-  const changeWalkthroughAxis = useCallback(
-    (axis: WalkthroughAxis) => {
-      if (axis === walkthroughAxis) {
-        return;
-      }
-
-      setWalkthroughAxis(axis);
-      const cached = walkthroughByAxisRef.current.get(axis);
-      if (cached) {
-        setNarrativeWalkthrough(cached);
-        setWalkthroughError(null);
-        return;
-      }
-
-      const currentState = stateRef.current;
-      if (currentState && currentState.files.length > 0) {
-        loadNarrativeWalkthrough(currentState.source, { axis });
-      }
-    },
-    [loadNarrativeWalkthrough, stateRef, walkthroughAxis],
+    [loadNarrativeWalkthrough],
   );
 
   const changeSidebarMode = useCallback(
@@ -384,7 +344,6 @@ export function useAppWalkthrough({
   return {
     activeReviewCommandTargetRef,
     changeSidebarMode,
-    changeWalkthroughAxis,
     closeCommitView,
     commitWalkthrough,
     enabledShareWalkthrough: shareWalkthroughEnabled ? shareWalkthrough : undefined,
@@ -412,7 +371,6 @@ export function useAppWalkthrough({
     subscribeToCommitOutput,
     updateActiveWalkthroughReviewTarget,
     updateWalkthroughCommitMessage,
-    walkthroughAxis,
     walkthroughError,
     walkthroughErrorRef,
     walkthroughFileError,

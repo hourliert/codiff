@@ -151,9 +151,6 @@
 .wt-toc-chapter-collapsed:hover {
   color: var(--text);
 }
-.wt-toc-axis {
-  margin-left: 6px;
-}
 .wt-toc-chapter-title {
   color: var(--text);
   font: 700 11px/1.2 var(--font-sans);
