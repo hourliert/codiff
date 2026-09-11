@@ -25,6 +25,25 @@ export const isPatchOnlyDiffSection = (section: DiffSection) =>
   section.oldFile == null &&
   section.newFile == null;
 
+/**
+ * Both sides of a section's file, when the loaded review already holds them.
+ *
+ * Pull requests read every file's contents up front. A walkthrough stop drops
+ * those contents from its own copy of the section so the diff shows only the
+ * stop's hunks instead of being recomputed across the whole file, which leaves
+ * the original section in state as the one place they still live.
+ */
+export const getInMemorySectionContents = (
+  files: ReadonlyArray<ChangedFile>,
+  path: string,
+  sectionId: string,
+): FileDiffLoadedFiles | null => {
+  const section = files
+    .find((candidate) => candidate.path === path)
+    ?.sections.find((candidate) => candidate.id === sectionId);
+  return section?.newFile ? { newFile: section.newFile, oldFile: section.oldFile ?? null } : null;
+};
+
 export const shouldLoadDiffSectionContents = (section: DiffSection) =>
   section.summary?.canLoad !== false && section.loadState === 'deferred';
 
