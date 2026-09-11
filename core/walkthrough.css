@@ -138,18 +138,15 @@
   font: 600 10px/1 var(--font-mono);
   letter-spacing: 0.02em;
 }
-.wt-toc-chapter-collapsed {
-  background: transparent;
-  border: 0;
+/*
+ * A stop whose files are all viewed keeps its title and folds its file rows to
+ * one line. Selecting it lists them again, because the current stop always does.
+ */
+.wt-toc-folded {
   color: var(--muted);
-  cursor: pointer;
+  display: block;
   font: 500 11px/1.4 var(--font-sans);
-  margin: 0 0 4px 22px;
-  padding: 2px 0;
-  text-align: left;
-}
-.wt-toc-chapter-collapsed:hover {
-  color: var(--text);
+  margin-top: 3px;
 }
 .wt-toc-chapter-title {
   color: var(--text);
@@ -273,8 +270,8 @@
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
-.wt-toc-stop.visited .wt-toc-title,
-.wt-toc-stop.visited .wt-toc-num {
+.wt-toc-stop.done .wt-toc-title,
+.wt-toc-stop.done .wt-toc-num {
   color: var(--muted);
 }
 /*
@@ -288,7 +285,7 @@
   letter-spacing: 0.02em;
   margin-top: 4px;
 }
-.wt-toc-stop.visited .wt-toc-continuity {
+.wt-toc-stop.done .wt-toc-continuity {
   color: var(--muted);
 }
 .wt-toc-file-list {
@@ -617,7 +614,7 @@
 .wt-arc-node:active {
   transform: scale(0.95);
 }
-.wt-arc-node.visited {
+.wt-arc-node.done {
   background: var(--viewed);
   border-color: var(--viewed);
   color: var(--code-bg);
@@ -792,7 +789,7 @@
   color: var(--tree-selection-focus);
   transform: scale(1.12);
 }
-.wt-arc-bundle.visited {
+.wt-arc-bundle.done {
   background: color-mix(in srgb, var(--viewed) 10%, var(--code-bg));
   border-color: var(--viewed);
   color: var(--viewed);

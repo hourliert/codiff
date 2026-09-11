@@ -1258,6 +1258,7 @@ export function ReviewSurface({
             files={visibleFiles}
             navigation={navigation}
             showWhitespace={snapshot.preferences.showWhitespace}
+            viewed={viewed}
             walkthrough={sharedWalkthrough}
           />
         ) : (
@@ -1349,6 +1350,7 @@ export function ReviewSurface({
             onUpdateCommitMessage={disabledCommitMessage}
             renderDiffBlocks={renderWalkthroughDiffBlocks}
             showWhitespace={snapshot.preferences.showWhitespace}
+            viewed={viewed}
             walkthrough={sharedWalkthrough}
           />
         ) : walkthroughFailed ? (

@@ -11,6 +11,7 @@ import {
   buildWalkthroughView,
   countWalkthroughStopsByImportance,
   isWalkthroughStopViewed,
+  isWalkthroughSupportViewed,
   focusChangedFileForHunks,
   formatWalkthroughFileLineRows,
   formatWalkthroughFileList,
@@ -958,6 +959,30 @@ test('uncovered walkthrough files preserve uncovered hunks from partially covere
   expect(getUncoveredWalkthroughFileLineItems([file], view, false)).toEqual([
     { added: 2, deleted: 2, path: file.path },
   ]);
+});
+
+test('the support step is done once what no stop covers is marked viewed', () => {
+  const file = multiHunkFile();
+  const section = file.sections[0];
+  const view = walkthroughViewCovering({
+    ...appHunk,
+    anchor: { ...appHunk.anchor, sectionId: section.id },
+    id: `${section.id}:h1`,
+    path: file.path,
+  });
+  const uncoveredIdentity = getUncoveredWalkthroughReviewIdentity(file, view, false);
+
+  expect(isWalkthroughSupportViewed([file], view, {}, false)).toBe(false);
+  // Marking the uncovered blocks is enough; the hunk a stop covers is that
+  // stop's business, not the support step's.
+  expect(
+    isWalkthroughSupportViewed(
+      [file],
+      view,
+      updateReviewIdentityViewed({}, uncoveredIdentity, false),
+      false,
+    ),
+  ).toBe(true);
 });
 
 test('uncovered walkthrough file fingerprints change with the uncovered hunk set', () => {

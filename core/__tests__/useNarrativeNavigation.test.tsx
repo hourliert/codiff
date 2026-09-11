@@ -117,7 +117,6 @@ test('support navigation holds support mode until the support block is reached',
     getNavigation().openSupport();
   });
   expect(getNavigation().mode).toBe('support');
-  expect(getNavigation().supportVisited).toBe(true);
   await act(async () => {
     getNavigation().syncIndexFromScroll(1);
   });

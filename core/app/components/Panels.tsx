@@ -5,6 +5,7 @@ import { ChatCircleIcon as ChatCircle } from '@phosphor-icons/react/ChatCircle';
 import { CheckIcon as Check } from '@phosphor-icons/react/Check';
 import { CheckCircleIcon as CheckCircle } from '@phosphor-icons/react/CheckCircle';
 import { CircleNotchIcon as CircleNotch } from '@phosphor-icons/react/CircleNotch';
+import { ExportIcon as Export } from '@phosphor-icons/react/Export';
 import { PowerIcon as Power } from '@phosphor-icons/react/Power';
 import { SealQuestionIcon as SealQuestion } from '@phosphor-icons/react/SealQuestion';
 import { WarningOctagonIcon as WarningOctagon } from '@phosphor-icons/react/WarningOctagon';
@@ -23,9 +24,11 @@ import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffKeymap } from '../../config/types.ts';
 import type { RepositoryLoadError, ReviewComment } from '../../lib/app-types.ts';
 import { buildReviewCommentsMarkdown, isOwnReviewComment } from '../../lib/review-comments.ts';
+import { formatWalkthroughForExport } from '../../lib/walkthrough-export.ts';
 import type {
   ChangedFile,
   CodiffUpdateStatus,
+  NarrativeWalkthrough,
   PullRequestMergeOptions,
   PullRequestMergeState,
   PullRequestReviewEvent,
@@ -436,6 +439,36 @@ export function CopyCommentsButton({
         <LucideCopy aria-hidden className="copy-comments-icon" size={14} strokeWidth={2.25} />
       )}
       <span className="copy-comments-count">{pendingCommentCount}</span>
+    </button>
+  );
+}
+
+/**
+ * Copies the walkthrough as plain text, to paste into another agent -- a voice
+ * agent to talk the change through with, for one. It sits beside the comments
+ * export because it is the same kind of hand-off, in the other direction.
+ */
+export function ExportWalkthroughButton({ walkthrough }: { walkthrough: NarrativeWalkthrough }) {
+  const [copied, markCopied] = useCopiedState(2000);
+  const exportWalkthrough = useCallback(async () => {
+    await navigator.clipboard.writeText(formatWalkthroughForExport(walkthrough));
+    markCopied();
+  }, [markCopied, walkthrough]);
+
+  return (
+    <button
+      aria-label="Copy the walkthrough as text"
+      className={`copy-comments-button export-walkthrough-button${copied ? ' copied' : ''}`}
+      onClick={() => void exportWalkthrough()}
+      title="Copy the walkthrough as text, to paste into another agent"
+      type="button"
+    >
+      {copied ? (
+        <Check aria-hidden className="copy-comments-icon check" size={15} weight="bold" />
+      ) : (
+        <Export aria-hidden className="copy-comments-icon" size={15} weight="bold" />
+      )}
+      <span className="copy-comments-count">Walkthrough</span>
     </button>
   );
 }

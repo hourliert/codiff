@@ -12,6 +12,7 @@ import {
   AgentUnavailablePanel,
   CopyCommentsButton,
   DiffSearchPanel,
+  ExportWalkthroughButton,
   FirstRunPanel,
   isPullRequestReviewActionDisabled,
   PullRequestReviewButtons,
@@ -26,6 +27,7 @@ import { ReviewCodeView, type ReviewDiffBlock } from './app/components/ReviewCod
 import type { ReviewModeItem } from './app/components/ReviewModeControl.tsx';
 import { ReviewTopBar } from './app/components/ReviewTopBar.tsx';
 import { Sidebar } from './app/components/Sidebar.tsx';
+import { ViewedProgress } from './app/components/ViewedProgress.tsx';
 import { CommitView } from './app/components/walkthrough/CommitView.tsx';
 import {
   NarrativeWalkthroughView,
@@ -110,6 +112,7 @@ import {
 } from './lib/source.ts';
 import {
   applyAutoViewed,
+  countViewedFiles,
   getViewedFileDelta,
   mergeHostViewed,
   readViewed,
@@ -356,6 +359,10 @@ export default function App() {
     toggleViewed: toggleReviewViewed,
     viewed,
   } = useReviewFileState({ onViewedChange: persistViewed });
+  const viewedFileCount = useMemo(
+    () => (state ? countViewedFiles(state.files, viewed) : 0),
+    [state, viewed],
+  );
   const toggleViewed = useCallback(
     (file: ChangedFile, isViewed: boolean, reviewIdentity?: ReviewIdentity) => {
       if (!stateRef.current) {
@@ -1993,16 +2000,22 @@ export default function App() {
       <div aria-hidden className="window-drag-region" />
       <ReviewTopBar
         actions={
-          <CopyCommentsButton
-            comments={isSwitchingSource ? emptyReviewComments : reviewComments}
-            files={orderedFiles}
-            reviewCommentsPrefix={preferences.reviewCommentsPrefix}
-            showWhitespace={showWhitespace}
-            viewerLogin={state?.viewerLogin}
-          />
+          <>
+            {narrativeWalkthrough ? (
+              <ExportWalkthroughButton walkthrough={narrativeWalkthrough} />
+            ) : null}
+            <CopyCommentsButton
+              comments={isSwitchingSource ? emptyReviewComments : reviewComments}
+              files={orderedFiles}
+              reviewCommentsPrefix={preferences.reviewCommentsPrefix}
+              showWhitespace={showWhitespace}
+              viewerLogin={state?.viewerLogin}
+            />
+          </>
         }
         context={
           <>
+            <ViewedProgress total={state.files.length} viewed={viewedFileCount} />
             {state.branch ? (
               <span className="review-top-bar-branch" title={state.branch}>
                 {state.branch}
@@ -2171,6 +2184,7 @@ export default function App() {
             renderDiffBlocks={renderWalkthroughDiffBlocks}
             shareWalkthroughDisabled={walkthroughSharing}
             showWhitespace={showWhitespace}
+            viewed={viewed}
             walkthrough={narrativeWalkthrough}
           />
         ) : showAgentUnavailablePanel ? (

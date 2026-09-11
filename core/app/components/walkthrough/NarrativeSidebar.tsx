@@ -2,7 +2,7 @@ import { CheckIcon as Check } from '@phosphor-icons/react/Check';
 import { GitBranchIcon as GitBranch } from '@phosphor-icons/react/GitBranch';
 import { PathIcon as Path } from '@phosphor-icons/react/Path';
 import { ShareNetworkIcon as ShareNetwork } from '@phosphor-icons/react/ShareNetwork';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import {
   buildCommitModel,
@@ -11,6 +11,7 @@ import {
   getWalkthroughChapterWeights,
   isWalkthroughCommittable,
   isWalkthroughStopViewed,
+  isWalkthroughSupportViewed,
   walkthroughItemTitleFallback,
   type WalkthroughView,
   type WalkthroughStopView,
@@ -53,26 +54,39 @@ const emptyPaths: ReadonlySet<string> = new Set();
 const emptyAnchors: ReadonlyArray<ReviewCommentAnchor> = [];
 const emptyViewed: Readonly<Record<string, string>> = {};
 
+/** One line standing in for file rows the reviewer has already marked viewed. */
+function TocFoldedFiles({ count }: { count: number }) {
+  return (
+    <span className="wt-toc-folded">
+      {count} {count === 1 ? 'file' : 'files'} viewed
+    </span>
+  );
+}
+
 function TocStop({
   continuity,
   current,
+  done,
   onSelect,
   stop,
-  visited,
 }: {
   continuity: StopContinuity;
   current: boolean;
+  /** Every file the stop covers is marked viewed. */
+  done: boolean;
   onSelect: (index: number) => void;
   stop: WalkthroughStopView;
-  visited: boolean;
 }) {
-  const isDone = visited && !current;
+  // A finished stop folds its file rows, which is most of its height, so a long
+  // walkthrough shrinks as it is reviewed. The current stop always lists its
+  // files: selecting a folded stop is how its files are shown again.
+  const isDone = done && !current;
   const files = formatWalkthroughFileLineRows(stop.hunks);
   const title = stop.title ?? walkthroughItemTitleFallback(stop);
   const continuityLabel = formatStopContinuity(continuity);
   return (
     <button
-      className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' visited' : ''}`}
+      className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' done' : ''}`}
       onClick={() => onSelect(stop.index)}
       title={title}
       type="button"
@@ -93,7 +107,7 @@ function TocStop({
           <span className="wt-toc-num">{stop.index + 1}</span>
           <span className="wt-toc-title">{title}</span>
         </span>
-        <TocFileRows files={files} />
+        {isDone ? <TocFoldedFiles count={files.length} /> : <TocFileRows files={files} />}
         {continuityLabel ? <span className="wt-toc-continuity">{continuityLabel}</span> : null}
       </span>
     </button>
@@ -104,11 +118,13 @@ function SupportingFilesStop({
   files,
   navigation,
   showWhitespace,
+  viewed,
   walkthroughView,
 }: {
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
   showWhitespace: boolean;
+  viewed: Readonly<Record<string, string>>;
   walkthroughView: WalkthroughView;
 }) {
   const uncoveredFiles = getUncoveredWalkthroughFileLineItems(
@@ -120,7 +136,8 @@ function SupportingFilesStop({
     return null;
   }
   const current = navigation.mode === 'support';
-  const isDone = navigation.supportVisited && !current;
+  const isDone =
+    !current && isWalkthroughSupportViewed(files, walkthroughView, viewed, showWhitespace);
   const fileRows = formatWalkthroughFileLineRows([
     ...walkthroughView.support.flatMap((item) => item.hunks),
     ...uncoveredFiles,
@@ -135,7 +152,7 @@ function SupportingFilesStop({
       </div>
       <div className="wt-toc-stops">
         <button
-          className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' visited' : ''}`}
+          className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' done' : ''}`}
           onClick={navigation.openSupport}
           title="Changed alongside the main walkthrough"
           type="button"
@@ -152,7 +169,7 @@ function SupportingFilesStop({
             )}
           </span>
           <span className="wt-toc-main">
-            <TocFileRows files={fileRows} />
+            {isDone ? <TocFoldedFiles count={fileRows.length} /> : <TocFileRows files={fileRows} />}
           </span>
         </button>
       </div>
@@ -161,18 +178,26 @@ function SupportingFilesStop({
 }
 
 /**
- * The reading controls: how much of the walkthrough is on screen, and how much
- * of it has been read. Both answer the same question a long walkthrough raises
- * -- "how much of this do I still owe?" -- which a list of stops alone does not.
+ * The reading controls: how much of the walkthrough is on screen, and how many
+ * of its stops are finished. A stop is finished when every file it covers is
+ * marked viewed, which is the same rule its tick follows.
  */
-function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
+function TocReadingBar({
+  files,
+  navigation,
+  viewed,
+}: {
+  files: ReadonlyArray<ChangedFile>;
+  navigation: NarrativeNavigation;
+  viewed: Readonly<Record<string, string>>;
+}) {
   const { importanceFilter, stopCounts, walkthroughView } = navigation;
   if (!walkthroughView) {
     return null;
   }
 
-  const visitedCount = walkthroughView.sequence.filter((stop) =>
-    navigation.visited.has(stop.id),
+  const viewedStopCount = walkthroughView.sequence.filter((stop) =>
+    isWalkthroughStopViewed(stop, files, viewed),
   ).length;
   // Nothing to choose between when every stop is critical, or none is.
   const canFilter = stopCounts.critical > 0 && stopCounts.critical < stopCounts.total;
@@ -180,7 +205,7 @@ function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
   return (
     <div className="wt-toc-reading">
       <span className="wt-toc-progress">
-        {visitedCount} of {walkthroughView.sequence.length} read
+        {viewedStopCount} of {walkthroughView.sequence.length} stops viewed
       </span>
       {canFilter ? (
         <span className="wt-toc-filter">
@@ -230,9 +255,6 @@ export function NarrativeSidebar({
   viewed?: Readonly<Record<string, string>>;
   walkthrough: NarrativeWalkthrough;
 }) {
-  const [expandedChapters, setExpandedChapters] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
   const chapterWeights = useMemo(() => getWalkthroughChapterWeights(walkthrough), [walkthrough]);
   const { walkthroughView } = navigation;
   if (!walkthroughView) {
@@ -263,18 +285,10 @@ export function NarrativeSidebar({
         <p>{renderInlineMarkdown(walkthrough.focus)}</p>
       </div>
 
-      <TocReadingBar navigation={navigation} />
+      <TocReadingBar files={files} navigation={navigation} viewed={viewed} />
 
       <div className="wt-toc-scroll">
         {walkthroughView.chapters.map((chapter) => {
-          // Marking a file viewed is this reviewer's way of saying they are done
-          // with it, so a chapter whose every stop is covered by viewed files is
-          // reading they have already done. It collapses to one row rather than
-          // disappearing: what was read is still part of the shape of the change.
-          const chapterViewed =
-            chapter.stops.length > 0 &&
-            chapter.stops.every((stop) => isWalkthroughStopViewed(stop, files, viewed));
-          const collapsed = chapterViewed && !expandedChapters.has(chapter.id);
           const weight = chapterWeights.get(chapter.id);
           return (
             <div className="wt-toc-chapter" key={chapter.id}>
@@ -289,32 +303,22 @@ export function NarrativeSidebar({
                   </span>
                 ) : null}
               </div>
-              {collapsed ? (
-                <button
-                  className="wt-toc-chapter-collapsed"
-                  onClick={() => setExpandedChapters((current) => new Set(current).add(chapter.id))}
-                  type="button"
-                >
-                  {chapter.stops.length} {chapter.stops.length === 1 ? 'stop' : 'stops'} read — show
-                </button>
-              ) : (
-                <div className="wt-toc-stops">
-                  {chapter.stops.map((stop) => (
-                    <TocStop
-                      continuity={getStopContinuity(
-                        stop.hunks,
-                        changedSincePaths,
-                        settledCommentAnchors,
-                      )}
-                      current={navigation.mode === 'stop' && stop.id === currentStopId}
-                      key={stop.id}
-                      onSelect={navigation.goStop}
-                      stop={stop}
-                      visited={navigation.visited.has(stop.id)}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="wt-toc-stops">
+                {chapter.stops.map((stop) => (
+                  <TocStop
+                    continuity={getStopContinuity(
+                      stop.hunks,
+                      changedSincePaths,
+                      settledCommentAnchors,
+                    )}
+                    current={navigation.mode === 'stop' && stop.id === currentStopId}
+                    done={isWalkthroughStopViewed(stop, files, viewed)}
+                    key={stop.id}
+                    onSelect={navigation.goStop}
+                    stop={stop}
+                  />
+                ))}
+              </div>
             </div>
           );
         })}
@@ -332,6 +336,7 @@ export function NarrativeSidebar({
           files={files}
           navigation={navigation}
           showWhitespace={showWhitespace}
+          viewed={viewed}
           walkthroughView={walkthroughView}
         />
         {committable && commitFiles ? (

@@ -1,6 +1,11 @@
 import { expect, test } from 'vite-plus/test';
 import { getWalkthroughReviewKeyPrefix } from '../lib/review-identity.ts';
-import { applyAutoViewed, getViewedFileDelta, mergeHostViewed } from '../lib/viewed.ts';
+import {
+  applyAutoViewed,
+  countViewedFiles,
+  getViewedFileDelta,
+  mergeHostViewed,
+} from '../lib/viewed.ts';
 import type { ChangedFile } from '../types.ts';
 
 const createFile = (path: string, fingerprint: string): ChangedFile => ({
@@ -14,6 +19,18 @@ const hunkKey = (path: string, hunkId: string) =>
   `${getWalkthroughReviewKeyPrefix(path)}${JSON.stringify(hunkId)}`;
 
 const files = [createFile('a.ts', 'fp-a'), createFile('b.ts', 'fp-b'), createFile('c.ts', 'fp-c')];
+
+test('the viewed count takes whole files on their current fingerprint only', () => {
+  const viewed = {
+    'a.ts': 'fp-a',
+    // Marked before a push changed the file, so it is no longer viewed.
+    'b.ts': 'fp-b-old',
+    // One block of a file is not the file.
+    [hunkKey('c.ts', 'c:h1')]: 'fp-c',
+  };
+
+  expect(countViewedFiles(files, viewed)).toBe(1);
+});
 
 test('the host decides which whole files count as viewed', () => {
   const merged = mergeHostViewed(files, { 'b.ts': 'fp-b' }, ['a.ts']);

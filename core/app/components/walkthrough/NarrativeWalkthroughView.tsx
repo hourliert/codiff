@@ -17,6 +17,8 @@ import {
   getUncoveredWalkthroughReviewIdentity,
   getWalkthroughRunNote,
   isWalkthroughCommittable,
+  isWalkthroughStopViewed,
+  isWalkthroughSupportViewed,
   resolveWalkthroughHunkRuns,
   walkthroughItemPaths,
   walkthroughItemTitleFallback,
@@ -291,19 +293,26 @@ const createSupportBlocks = (
   return blocks;
 };
 
+const emptyViewed: Readonly<Record<string, string>> = {};
+
 function Arc({
   committable,
+  doneStopIds,
   navigation,
   onShareWalkthrough,
   shareWalkthroughDisabled = false,
   supportAvailable,
+  supportDone,
   walkthroughView,
 }: {
   committable: boolean;
+  /** Stops whose every file is marked viewed. The tick means that and nothing else. */
+  doneStopIds: ReadonlySet<string>;
   navigation: NarrativeNavigation;
   onShareWalkthrough?: () => void;
   shareWalkthroughDisabled?: boolean;
   supportAvailable: boolean;
+  supportDone: boolean;
   walkthroughView: WalkthroughView;
 }) {
   const currentIndex =
@@ -421,8 +430,8 @@ function Arc({
                   const state =
                     stop.index === currentIndex
                       ? 'current'
-                      : navigation.visited.has(stop.id)
-                        ? 'visited'
+                      : doneStopIds.has(stop.id)
+                        ? 'done'
                         : 'upcoming';
                   return (
                     <button
@@ -432,7 +441,7 @@ function Arc({
                       title={stop.title ?? walkthroughItemTitleFallback(stop)}
                       type="button"
                     >
-                      {state === 'visited' ? (
+                      {state === 'done' ? (
                         <Check size={12} weight="bold" />
                       ) : (
                         <span>{stop.index + 1}</span>
@@ -454,11 +463,7 @@ function Arc({
               </span>
               <button
                 className={`wt-arc-bundle ${
-                  navigation.mode === 'support'
-                    ? 'current'
-                    : navigation.supportVisited
-                      ? 'visited'
-                      : 'upcoming'
+                  navigation.mode === 'support' ? 'current' : supportDone ? 'done' : 'upcoming'
                 }`}
                 onClick={navigation.openSupport}
                 title="Review supporting files"
@@ -526,6 +531,7 @@ export function NarrativeWalkthroughView({
   renderDiffBlocks,
   shareWalkthroughDisabled,
   showWhitespace,
+  viewed = emptyViewed,
   walkthrough,
 }: {
   allowCommit?: boolean;
@@ -539,6 +545,7 @@ export function NarrativeWalkthroughView({
   renderDiffBlocks: RenderWalkthroughDiffBlocks;
   shareWalkthroughDisabled?: boolean;
   showWhitespace: boolean;
+  viewed?: Readonly<Record<string, string>>;
   walkthrough: NarrativeWalkthrough;
 }) {
   const { walkthroughView } = navigation;
@@ -558,6 +565,23 @@ export function NarrativeWalkthroughView({
     [files, navigation.mode, showWhitespace, walkthroughView],
   );
   const supportAvailable = supportBlocks.length > 0;
+  // Done is a fact about the reviewer's viewed marks, not about where they have
+  // clicked or scrolled: a stop is done once every file it covers is viewed.
+  const doneStopIds = useMemo(
+    () =>
+      new Set(
+        (walkthroughView?.sequence ?? [])
+          .filter((stop) => isWalkthroughStopViewed(stop, files, viewed))
+          .map((stop) => stop.id),
+      ),
+    [files, viewed, walkthroughView],
+  );
+  const supportDone = useMemo(
+    () =>
+      walkthroughView != null &&
+      isWalkthroughSupportViewed(files, walkthroughView, viewed, showWhitespace),
+    [files, showWhitespace, viewed, walkthroughView],
+  );
   const firstSupportBlockId = supportBlocks[0]?.id ?? null;
   const supportBlockIds = useMemo(
     () => new Set(supportBlocks.map((block) => block.id)),
@@ -666,12 +690,12 @@ export function NarrativeWalkthroughView({
   const supportFiles = formatWalkthroughFileList(
     supportBlocks.flatMap((block) => (block.file ? [block.file.path] : [])),
   );
-  const allStopsVisited =
+  const allStopsViewed =
     walkthroughView.sequence.length > 0 &&
-    walkthroughView.sequence.every((stop) => navigation.visited.has(stop.id)) &&
-    (!supportAvailable || navigation.supportVisited);
+    walkthroughView.sequence.every((stop) => doneStopIds.has(stop.id)) &&
+    (!supportAvailable || supportDone);
   const totalSteps = walkthroughView.sequence.length + (supportAvailable ? 1 : 0);
-  const completionAction = allStopsVisited
+  const completionAction = allStopsViewed
     ? committable
       ? {
           onClick: navigation.enterCommit,
@@ -693,10 +717,12 @@ export function NarrativeWalkthroughView({
     >
       <Arc
         committable={committable}
+        doneStopIds={doneStopIds}
         navigation={navigation}
         onShareWalkthrough={onShareWalkthrough}
         shareWalkthroughDisabled={shareWalkthroughDisabled}
         supportAvailable={supportAvailable}
+        supportDone={supportDone}
         walkthroughView={walkthroughView}
       />
 

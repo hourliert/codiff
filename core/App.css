@@ -867,6 +867,47 @@ a.review-top-bar-source:focus-visible {
   min-width: 0;
 }
 
+/*
+ * How much of the change is marked viewed, counted in files. A bar rather than
+ * a ring so the remaining share reads at a glance from across the top bar.
+ */
+.viewed-progress {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  flex: none;
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  gap: 8px;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.viewed-progress-bar {
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  border-radius: 999px;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  width: 96px;
+}
+
+.viewed-progress-fill {
+  background: var(--tree-selection-focus);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transition: width 200ms ease;
+}
+
+.viewed-progress.complete .viewed-progress-fill {
+  background: var(--viewed);
+}
+
+.viewed-progress-count {
+  color: var(--text);
+}
+
 .review-top-bar-actions {
   -webkit-app-region: no-drag;
   align-items: center;
