@@ -21,6 +21,7 @@ const {
     customPrompt?: string,
     previousWalkthrough?: unknown,
     autoViewedPatterns?: ReadonlyArray<string>,
+    axis?: string,
   ) => string;
   getNarrativeWalkthroughCacheKey: (
     state: any,
@@ -29,6 +30,7 @@ const {
     context?: unknown,
     customPrompt?: string,
     autoViewedPatterns?: ReadonlyArray<string>,
+    axis?: string,
   ) => string;
   narrativeWalkthroughSchema: {
     properties: Record<string, any>;
@@ -750,27 +752,137 @@ test('prompts generated walkthroughs with PR descriptions as orientation only', 
   });
 
   expect(prompt).toContain('"description":"## Intent\\n\\nKeep reviewers oriented."');
-  expect(prompt).toContain('author-written PR/MR intent and orientation');
-  expect(prompt).toContain('not proof of behavior');
-  expect(prompt).toContain(
-    'The changed files, patches, and hunk data remain the source of truth for what changed.',
-  );
+  // The description is the only place intent exists, so it is authoritative for
+  // what the change is *for* while the diff stays authoritative for what it
+  // *does*. A walkthrough asked to judge the first against the second has to be
+  // told the description is evidence rather than noise.
+  expect(prompt).toContain("it is the author's own account of the change");
+  expect(prompt).toContain('authoritative for what the change is *for*');
+  expect(prompt).toContain('authoritative for what the change *does*');
+  expect(prompt).toContain('that disagreement is itself worth reporting');
 });
 
-test('truncates long PR descriptions in generated walkthrough prompts', () => {
-  const prompt = buildNarrativeWalkthroughPrompt({
+const axisState = {
+  branch: 'main',
+  files: files.slice(0, 1),
+  generatedAt: 1,
+  root: '/repo',
+  source: { type: 'working-tree' as const },
+};
+
+test('carves chapters along the axis it is asked for', () => {
+  const subsystem = buildNarrativeWalkthroughPrompt(
+    axisState,
+    undefined,
+    'Codex',
+    undefined,
+    undefined,
+    [],
+    'subsystem',
+  );
+  const concept = buildNarrativeWalkthroughPrompt(
+    axisState,
+    undefined,
+    'Codex',
+    undefined,
+    undefined,
+    [],
+    'concept',
+  );
+
+  expect(subsystem).toContain('Organize chapters by the part of the codebase');
+  expect(concept).toContain('Organize chapters by what the change does');
+  expect(subsystem).not.toContain('Organize chapters by what the change does');
+  expect(concept).not.toContain('Organize chapters by the part of the codebase');
+});
+
+test('defaults to the subsystem axis, including for an unknown one', () => {
+  const fallback = buildNarrativeWalkthroughPrompt(axisState);
+  const unknown = buildNarrativeWalkthroughPrompt(
+    axisState,
+    undefined,
+    'Codex',
+    undefined,
+    undefined,
+    [],
+    'sideways',
+  );
+
+  expect(fallback).toContain('Organize chapters by the part of the codebase');
+  expect(unknown).toContain('Organize chapters by the part of the codebase');
+});
+
+test('caches the two axes as separate lineages', () => {
+  const agent = { id: 'codex', label: 'Codex', normalizeModel: (model: unknown) => model };
+  const keyFor = (axis: string) =>
+    getNarrativeWalkthroughCacheKey(axisState, agent, 'model', undefined, undefined, [], axis);
+
+  // Both carvings of one diff have to survive at once: switching between them
+  // must not evict the other and charge a second generation to come back.
+  expect(keyFor('subsystem')).not.toBe(keyFor('concept'));
+  expect(keyFor('subsystem')).toBe(keyFor('subsystem'));
+});
+
+test('asks for a thesis only when there is a description to judge against', () => {
+  const withDescription = buildNarrativeWalkthroughPrompt({
     branch: 'main',
     files: files.slice(0, 1),
     generatedAt: 1,
     root: '/repo',
     source: {
-      description: `${'A'.repeat(4100)}UNTRUNCATED_TAIL`,
+      description: '## Intent\n\nKeep reviewers oriented.',
       number: 42,
       provider: 'github',
       type: 'pull-request',
       url: 'https://github.com/nkzw-tech/codiff/pull/42',
     },
   });
+  const withoutDescription = buildNarrativeWalkthroughPrompt({
+    branch: 'main',
+    files: files.slice(0, 1),
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  });
+
+  expect(withDescription).toContain('Write "thesis"');
+  expect(withDescription).toContain('whether the diff delivers it');
+  // Without a description the answer could only restate the diff, so the rule
+  // is not stated at all rather than asked and left unanswerable.
+  expect(withoutDescription).not.toContain('Write "thesis"');
+});
+
+const promptForDescription = (description: string) =>
+  buildNarrativeWalkthroughPrompt({
+    branch: 'main',
+    files: files.slice(0, 1),
+    generatedAt: 1,
+    root: '/repo',
+    source: {
+      description,
+      number: 42,
+      provider: 'github',
+      type: 'pull-request',
+      url: 'https://github.com/nkzw-tech/codiff/pull/42',
+    },
+  });
+
+test('carries a long agent-written PR description into the prompt whole', () => {
+  // The case this cap exists for: a real agent-written pull request body ran to
+  // 12.5k characters, and under the prose cap the model received its first 4k --
+  // the deployment preamble -- with the section saying what the change was for
+  // cut off unread. Sized past any plausible prose cap so a future narrowing of
+  // one does not quietly re-truncate the other.
+  const description = `${'A'.repeat(12_000)}WHAT_THIS_CHANGE_IS_FOR`;
+
+  const prompt = promptForDescription(description);
+
+  expect(prompt).toContain('WHAT_THIS_CHANGE_IS_FOR');
+  expect(prompt).not.toContain('...[truncated]');
+});
+
+test('truncates a PR description past the description budget', () => {
+  const prompt = promptForDescription(`${'A'.repeat(24_100)}UNTRUNCATED_TAIL`);
 
   expect(prompt).toContain('...[truncated]');
   expect(prompt).not.toContain('UNTRUNCATED_TAIL');

@@ -2,19 +2,27 @@ import { CheckIcon as Check } from '@phosphor-icons/react/Check';
 import { GitBranchIcon as GitBranch } from '@phosphor-icons/react/GitBranch';
 import { PathIcon as Path } from '@phosphor-icons/react/Path';
 import { ShareNetworkIcon as ShareNetwork } from '@phosphor-icons/react/ShareNetwork';
+import { useMemo, useState } from 'react';
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import {
   buildCommitModel,
   formatWalkthroughFileLineRows,
   getUncoveredWalkthroughFileLineItems,
+  getWalkthroughChapterWeights,
   isWalkthroughCommittable,
+  isWalkthroughStopViewed,
   walkthroughItemTitleFallback,
   type WalkthroughView,
   type WalkthroughStopView,
 } from '../../../lib/narrative-walkthrough.ts';
 import type { StopContinuity } from '../../../lib/walkthrough-continuity.ts';
 import { formatStopContinuity, getStopContinuity } from '../../../lib/walkthrough-continuity.ts';
-import type { ChangedFile, NarrativeWalkthrough, ReviewCommentAnchor } from '../../../types.ts';
+import type {
+  ChangedFile,
+  NarrativeWalkthrough,
+  ReviewCommentAnchor,
+  WalkthroughAxis,
+} from '../../../types.ts';
 import { ChapterIcon } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
@@ -48,6 +56,7 @@ function TocFileRows({
 
 const emptyPaths: ReadonlySet<string> = new Set();
 const emptyAnchors: ReadonlyArray<ReviewCommentAnchor> = [];
+const emptyViewed: Readonly<Record<string, string>> = {};
 
 function TocStop({
   continuity,
@@ -161,7 +170,15 @@ function SupportingFilesStop({
  * of it has been read. Both answer the same question a long walkthrough raises
  * -- "how much of this do I still owe?" -- which a list of stops alone does not.
  */
-function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
+function TocReadingBar({
+  axis,
+  navigation,
+  onChangeAxis,
+}: {
+  axis: WalkthroughAxis | undefined;
+  navigation: NarrativeNavigation;
+  onChangeAxis?: (axis: WalkthroughAxis) => void;
+}) {
   const { importanceFilter, stopCounts, walkthroughView } = navigation;
   if (!walkthroughView) {
     return null;
@@ -199,31 +216,68 @@ function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
           </button>
         </span>
       ) : null}
+      {onChangeAxis ? (
+        <span className="wt-toc-filter wt-toc-axis">
+          <button
+            aria-pressed={axis !== 'concept'}
+            className={`wt-toc-filter-option${axis !== 'concept' ? ' active' : ''}`}
+            onClick={() => onChangeAxis('subsystem')}
+            title="Chapters follow the part of the codebase each change belongs to."
+            type="button"
+          >
+            By area
+          </button>
+          <button
+            aria-pressed={axis === 'concept'}
+            className={`wt-toc-filter-option${axis === 'concept' ? ' active' : ''}`}
+            onClick={() => onChangeAxis('concept')}
+            title="Chapters follow what the change does, across package boundaries. Generated the first time you ask for it."
+            type="button"
+          >
+            By idea
+          </button>
+        </span>
+      ) : null}
     </div>
   );
 }
 
 export function NarrativeSidebar({
   allowCommit = true,
+  axis,
   changedSincePaths = emptyPaths,
   files,
   navigation,
+  onChangeWalkthroughAxis,
   onShareWalkthrough,
   settledCommentAnchors = emptyAnchors,
   shareWalkthroughDisabled = false,
   showWhitespace,
+  viewed = emptyViewed,
   walkthrough,
 }: {
   allowCommit?: boolean;
+  /**
+   * The carving that was asked for, which leads the one the loaded walkthrough
+   * reports: while the other axis is generating, the control stays on the
+   * choice the reviewer just made rather than snapping back.
+   */
+  axis?: WalkthroughAxis;
   changedSincePaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
+  onChangeWalkthroughAxis?: (axis: WalkthroughAxis) => void;
   onShareWalkthrough?: () => void;
   settledCommentAnchors?: ReadonlyArray<ReviewCommentAnchor>;
   shareWalkthroughDisabled?: boolean;
   showWhitespace: boolean;
+  viewed?: Readonly<Record<string, string>>;
   walkthrough: NarrativeWalkthrough;
 }) {
+  const [expandedChapters, setExpandedChapters] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const chapterWeights = useMemo(() => getWalkthroughChapterWeights(walkthrough), [walkthrough]);
   const { walkthroughView } = navigation;
   if (!walkthroughView) {
     return <div className="wt-empty">This walkthrough has no readable sequence.</div>;
@@ -242,40 +296,76 @@ export function NarrativeSidebar({
 
   return (
     <div className="walkthrough-list">
+      {walkthrough.thesis ? (
+        <div className="wt-thesis">
+          <span className="wt-focus-label">Does it do what it says</span>
+          <p>{renderInlineMarkdown(walkthrough.thesis)}</p>
+        </div>
+      ) : null}
       <div className="wt-focus">
         <span className="wt-focus-label">Review focus</span>
         <p>{renderInlineMarkdown(walkthrough.focus)}</p>
       </div>
 
-      <TocReadingBar navigation={navigation} />
+      <TocReadingBar
+        axis={axis ?? walkthrough.axis}
+        navigation={navigation}
+        onChangeAxis={onChangeWalkthroughAxis}
+      />
 
       <div className="wt-toc-scroll">
-        {walkthroughView.chapters.map((chapter) => (
-          <div className="wt-toc-chapter" key={chapter.id}>
-            <div className="wt-toc-chapter-head">
-              <span className="wt-toc-chapter-icon">
-                <ChapterIcon icon={chapter.icon} size={15} />
-              </span>
-              <span className="wt-toc-chapter-title">{chapter.title}</span>
+        {walkthroughView.chapters.map((chapter) => {
+          // Marking a file viewed is this reviewer's way of saying they are done
+          // with it, so a chapter whose every stop is covered by viewed files is
+          // reading they have already done. It collapses to one row rather than
+          // disappearing: what was read is still part of the shape of the change.
+          const chapterViewed =
+            chapter.stops.length > 0 &&
+            chapter.stops.every((stop) => isWalkthroughStopViewed(stop, files, viewed));
+          const collapsed = chapterViewed && !expandedChapters.has(chapter.id);
+          const weight = chapterWeights.get(chapter.id);
+          return (
+            <div className="wt-toc-chapter" key={chapter.id}>
+              <div className="wt-toc-chapter-head">
+                <span className="wt-toc-chapter-icon">
+                  <ChapterIcon icon={chapter.icon} size={15} />
+                </span>
+                <span className="wt-toc-chapter-title">{chapter.title}</span>
+                {weight != null && weight > 0 ? (
+                  <span className="wt-toc-chapter-weight" title={`${weight}% of the changed lines`}>
+                    {weight}%
+                  </span>
+                ) : null}
+              </div>
+              {collapsed ? (
+                <button
+                  className="wt-toc-chapter-collapsed"
+                  onClick={() => setExpandedChapters((current) => new Set(current).add(chapter.id))}
+                  type="button"
+                >
+                  {chapter.stops.length} {chapter.stops.length === 1 ? 'stop' : 'stops'} read — show
+                </button>
+              ) : (
+                <div className="wt-toc-stops">
+                  {chapter.stops.map((stop) => (
+                    <TocStop
+                      continuity={getStopContinuity(
+                        stop.hunks,
+                        changedSincePaths,
+                        settledCommentAnchors,
+                      )}
+                      current={navigation.mode === 'stop' && stop.id === currentStopId}
+                      key={stop.id}
+                      onSelect={navigation.goStop}
+                      stop={stop}
+                      visited={navigation.visited.has(stop.id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="wt-toc-stops">
-              {chapter.stops.map((stop) => (
-                <TocStop
-                  continuity={getStopContinuity(
-                    stop.hunks,
-                    changedSincePaths,
-                    settledCommentAnchors,
-                  )}
-                  current={navigation.mode === 'stop' && stop.id === currentStopId}
-                  key={stop.id}
-                  onSelect={navigation.goStop}
-                  stop={stop}
-                  visited={navigation.visited.has(stop.id)}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {walkthroughView.hiddenStopCount > 0 ? (
           <button
             className="wt-toc-hidden"

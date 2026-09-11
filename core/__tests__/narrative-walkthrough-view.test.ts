@@ -18,6 +18,7 @@ import {
   getUncoveredWalkthroughFileLineItems,
   getUncoveredWalkthroughFiles,
   getUncoveredWalkthroughReviewIdentity,
+  getWalkthroughChapterWeights,
   getWalkthroughRunNote,
   isWalkthroughCommittable,
   resolveWalkthroughHunkFile,
@@ -192,6 +193,76 @@ const walkthrough = (): NarrativeWalkthrough => ({
   ],
   title: 'Title',
   version: 4,
+});
+
+test('chapter weights report each chapter as a share of the changed lines', () => {
+  const weights = getWalkthroughChapterWeights(walkthrough());
+
+  // Two chapters, one hunk each: the split is whatever share of the changed
+  // lines each hunk carries, and the shares cover the whole walkthrough.
+  expect([...weights.keys()].sort()).toEqual(['bug', 'proof']);
+  expect([...weights.values()].reduce((total, weight) => total + weight, 0)).toBe(100);
+});
+
+test('chapter weights count a hunk carried by two stops once', () => {
+  const shared = {
+    ...walkthrough(),
+    chapters: [
+      {
+        blurb: 'Twice.',
+        icon: 'bug' as const,
+        id: 'twice',
+        stops: [
+          {
+            ...group({ hunks: [appHunk], id: 's1' }),
+            importance: 'critical' as const,
+            prose: 'A.',
+          },
+          { ...group({ hunks: [appHunk], id: 's2' }), importance: 'normal' as const, prose: 'B.' },
+        ],
+        title: 'Twice',
+      },
+      {
+        blurb: 'Once.',
+        icon: 'flask' as const,
+        id: 'once',
+        stops: [
+          { ...group({ hunks: [testHunk], id: 's3' }), importance: 'normal' as const, prose: 'C.' },
+        ],
+        title: 'Once',
+      },
+    ],
+  };
+
+  const weights = getWalkthroughChapterWeights(shared);
+  const single = getWalkthroughChapterWeights(walkthrough());
+
+  // One piece of reading explained in two stops is still one piece of reading,
+  // so repeating a hunk inside a chapter must not inflate its share.
+  expect(weights.get('twice')).toBe(single.get('bug'));
+});
+
+test('chapter weights are empty when nothing countable changed', () => {
+  expect(
+    getWalkthroughChapterWeights({
+      ...walkthrough(),
+      chapters: [
+        {
+          blurb: 'Nothing.',
+          icon: 'doc',
+          id: 'empty',
+          stops: [
+            {
+              ...group({ hunks: [{ ...appHunk, added: 0, deleted: 0 }], id: 's1' }),
+              importance: 'context',
+              prose: 'Nothing.',
+            },
+          ],
+          title: 'Empty',
+        },
+      ],
+    }).size,
+  ).toBe(0);
 });
 
 test('formatWalkthroughFileList shows filenames up to five unique files', () => {

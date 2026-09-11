@@ -8,6 +8,21 @@
   border-bottom: 1px solid var(--sidebar-border);
   padding: 0 8px 8px;
 }
+/*
+ * Whether the change does what its author said it was for. It sits above the
+ * review focus because it is the question a reviewer of an agent-written change
+ * opens with, and the one the focus line cannot answer: the focus summarizes
+ * the diff, and a summary of the diff cannot disagree with it.
+ */
+.wt-thesis {
+  border-bottom: 1px solid var(--sidebar-border);
+  padding: 0 8px 8px;
+}
+.wt-thesis p {
+  color: var(--sidebar-text);
+  font: 12px/1.5 var(--font-sans);
+  text-wrap: pretty;
+}
 .wt-focus-label {
   color: var(--text);
   font: 700 10px/1 var(--font-sans);
@@ -99,7 +114,8 @@
   align-items: center;
   display: grid;
   gap: 4px;
-  grid-template-columns: 18px minmax(0, 1fr);
+  /* Icon, title, then the share of the reading this chapter carries. */
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   padding: 0 0 4px 2px;
 }
 .wt-toc-chapter-icon {
@@ -110,6 +126,33 @@
 .wt-toc-chapter-icon svg {
   height: 16px;
   width: 16px;
+}
+/*
+ * Which chapter carries the reading. Every chapter otherwise looks the same
+ * size on screen, so the one holding half the diff is indistinguishable from
+ * the one holding a runbook until you are inside it.
+ */
+.wt-toc-chapter-weight {
+  color: var(--muted);
+  flex: none;
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.02em;
+}
+.wt-toc-chapter-collapsed {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font: 500 11px/1.4 var(--font-sans);
+  margin: 0 0 4px 22px;
+  padding: 2px 0;
+  text-align: left;
+}
+.wt-toc-chapter-collapsed:hover {
+  color: var(--text);
+}
+.wt-toc-axis {
+  margin-left: 6px;
 }
 .wt-toc-chapter-title {
   color: var(--text);

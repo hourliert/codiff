@@ -181,6 +181,9 @@
       },
       "type": "array"
     },
+    "thesis": {
+      "type": "string"
+    },
     "title": {
       "type": "string"
     },

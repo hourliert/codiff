@@ -120,7 +120,11 @@ test('walkthrough controller lazily generates, refreshes, and transitions modes'
     expect(getController().narrativeWalkthrough).toEqual(walkthrough);
     expect(getController().walkthroughLoading).toBe(false);
   });
-  expect(getNarrativeWalkthrough).toHaveBeenCalledWith(walkthrough.source, undefined);
+  // Every request names the carving it wants, so the two axes stay separate
+  // cache lineages rather than overwriting one another.
+  expect(getNarrativeWalkthrough).toHaveBeenCalledWith(walkthrough.source, {
+    axis: 'subsystem',
+  });
   expect(getController().sidebarMode).toBe('walkthrough');
   expect(getController().walkthroughProgress.responseLabelIndex).toBe(0);
   const refreshedState = {
@@ -136,6 +140,7 @@ test('walkthrough controller lazily generates, refreshes, and transitions modes'
     expect(getNarrativeWalkthrough).toHaveBeenCalledTimes(2);
   });
   expect(getNarrativeWalkthrough).toHaveBeenLastCalledWith(walkthrough.source, {
+    axis: 'subsystem',
     force: true,
     previousWalkthrough: walkthrough,
   });
