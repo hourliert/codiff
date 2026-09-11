@@ -414,6 +414,71 @@ export const isWalkthroughStopViewed = (
 };
 
 /** How many stops each filter would show, for a control that has to label itself. */
+/**
+ * How much of the reading each chapter carries, as a share of the whole
+ * walkthrough's changed lines.
+ *
+ * A long walkthrough gives every chapter the same heading and the same row of
+ * stops, so nothing on screen distinguishes the chapter holding half the diff
+ * from the one holding a runbook. That is a question about the change rather
+ * than about the agent's judgement, so it is computed from the hunks rather
+ * than asked for: counting lines cannot drift between runs the way a model's
+ * own estimate would.
+ */
+export const getWalkthroughChapterWeights = (
+  walkthrough: NarrativeWalkthrough,
+): ReadonlyMap<string, number> => {
+  const byChapter = new Map<string, number>();
+  let total = 0;
+  for (const chapter of walkthrough.chapters) {
+    // Counted per distinct hunk: one hunk carried by two stops of the same
+    // chapter is one piece of reading, not two.
+    const counted = new Set<string>();
+    let lines = 0;
+    for (const stop of chapter.stops) {
+      for (const hunk of stop.hunks) {
+        if (counted.has(hunk.id)) {
+          continue;
+        }
+        counted.add(hunk.id);
+        lines += hunk.added + hunk.deleted;
+      }
+    }
+    byChapter.set(chapter.id, lines);
+    total += lines;
+  }
+
+  if (total === 0) {
+    return new Map();
+  }
+
+  // Apportioned by largest remainder rather than rounded independently, because
+  // these are read side by side: two chapters of a sixteen-line change round to
+  // 13% and 88% on their own, and a strip whose shares visibly do not add up
+  // reads as a bug in the number rather than a fact about the change.
+  const exact = [...byChapter].map(([id, lines]) => ({
+    floor: Math.floor((lines / total) * 100),
+    id,
+    remainder: ((lines / total) * 100) % 1,
+  }));
+  let remaining = 100 - exact.reduce((sum, entry) => sum + entry.floor, 0);
+  const byRemainder = [...exact].sort((left, right) => right.remainder - left.remainder);
+  const bonus = new Set<string>();
+  for (const entry of byRemainder) {
+    if (remaining <= 0) {
+      break;
+    }
+    bonus.add(entry.id);
+    remaining -= 1;
+  }
+
+  const weights = new Map<string, number>();
+  for (const entry of exact) {
+    weights.set(entry.id, entry.floor + (bonus.has(entry.id) ? 1 : 0));
+  }
+  return weights;
+};
+
 export const countWalkthroughStopsByImportance = (walkthrough: NarrativeWalkthrough) => {
   const stops = walkthrough.chapters.flatMap((chapter) => chapter.stops);
   return {

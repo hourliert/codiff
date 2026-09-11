@@ -404,6 +404,7 @@ export default function App() {
   const {
     activeReviewCommandTargetRef,
     changeSidebarMode,
+    changeWalkthroughAxis,
     closeCommitView,
     commitWalkthrough,
     enabledShareWalkthrough,
@@ -431,6 +432,7 @@ export default function App() {
     subscribeToCommitOutput,
     updateActiveWalkthroughReviewTarget,
     updateWalkthroughCommitMessage,
+    walkthroughAxis,
     walkthroughError,
     walkthroughErrorRef,
     walkthroughFileError,
@@ -2115,6 +2117,7 @@ export default function App() {
           narrativeNavigation={narrativeNavigation}
           narrativeWalkthrough={narrativeWalkthrough}
           onActivatePath={activatePath}
+          onChangeWalkthroughAxis={changeWalkthroughAxis}
           onLoadMoreHistory={loadMoreHistory}
           onSearchQueryChange={
             sidebarMode === 'history' ? setHistorySearchQuery : setFileSearchQuery
@@ -2130,6 +2133,7 @@ export default function App() {
           shareWalkthroughDisabled={walkthroughSharing}
           showWhitespace={showWhitespace}
           viewed={viewed}
+          walkthroughAxis={walkthroughAxis}
           walkthroughError={walkthroughError}
           walkthroughLoading={walkthroughLoading}
           walkthroughProgress={walkthroughProgress}

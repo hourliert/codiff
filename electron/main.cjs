@@ -102,6 +102,7 @@ const {
   normalizeNarrativeWalkthrough,
   readNarrativeWalkthrough,
   resolveNarrativeWalkthroughModel,
+  WALKTHROUGH_AXES,
 } = require('./narrative-walkthrough.cjs');
 const { readPreviousRound } = require('./walkthrough-continuity.cjs');
 const {
@@ -1911,6 +1912,10 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
     const walkthroughModel = resolveNarrativeWalkthroughModel(state, agent, agentOptions.model);
     const walkthroughPrompt = config.settings.walkthroughPrompt;
     const autoViewedPatterns = config.settings.autoViewedPatterns;
+    // The renderer asks for one carving of the change. An unknown value falls
+    // back rather than failing: the axis decides how a walkthrough reads, never
+    // whether the reviewer gets one.
+    const axis = WALKTHROUGH_AXES.has(options?.axis) ? options.axis : 'subsystem';
     const cacheKey = getNarrativeWalkthroughCacheKey(
       state,
       agent,
@@ -1918,6 +1923,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       walkthroughContext,
       walkthroughPrompt,
       autoViewedPatterns,
+      axis,
     );
     const walkthroughScope = { repoRoot: state.root, source: state.source };
     const previousRecord = readLatestStoredWalkthrough(walkthroughScope, cacheKey);
@@ -1968,6 +1974,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
       walkthroughPrompt,
       previousWalkthrough,
       autoViewedPatterns,
+      axis,
     );
     if (result.status === 'ready') {
       const generatedCacheKey = getNarrativeWalkthroughCacheKey(
@@ -1977,6 +1984,7 @@ ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source, options) 
         walkthroughContext,
         walkthroughPrompt,
         autoViewedPatterns,
+        axis,
       );
       try {
         const cacheableWalkthrough = { ...result.walkthrough };

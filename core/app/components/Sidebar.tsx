@@ -22,6 +22,7 @@ import type {
   ReviewCommentAnchor,
   ReviewSource,
 } from '../../types.ts';
+import type { WalkthroughAxis } from '../../types.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { ReviewFileTree } from './FileTree.tsx';
@@ -43,6 +44,7 @@ export function Sidebar({
   narrativeNavigation,
   narrativeWalkthrough,
   onActivatePath,
+  onChangeWalkthroughAxis,
   onLoadMoreHistory,
   onSearchQueryChange,
   onSelectSource,
@@ -56,6 +58,7 @@ export function Sidebar({
   shareWalkthroughDisabled,
   showWhitespace,
   viewed,
+  walkthroughAxis,
   walkthroughError,
   walkthroughLoading,
   walkthroughProgress,
@@ -73,6 +76,7 @@ export function Sidebar({
   narrativeNavigation: NarrativeNavigation;
   narrativeWalkthrough: NarrativeWalkthrough | null;
   onActivatePath: (path: string) => void;
+  onChangeWalkthroughAxis?: (axis: WalkthroughAxis) => void;
   onLoadMoreHistory: () => void;
   onSearchQueryChange: (query: string) => void;
   onSelectSource: (source: ReviewSource) => void;
@@ -86,6 +90,7 @@ export function Sidebar({
   shareWalkthroughDisabled?: boolean;
   showWhitespace: boolean;
   viewed: Record<string, string>;
+  walkthroughAxis?: WalkthroughAxis;
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
   walkthroughProgress: import('./walkthrough/WalkthroughProgress.tsx').WalkthroughProgressState;
@@ -152,13 +157,16 @@ export function Sidebar({
         />
       ) : mode === 'walkthrough' && narrativeWalkthrough ? (
         <NarrativeSidebar
+          axis={walkthroughAxis}
           changedSincePaths={changedSincePaths}
           files={commitFiles}
           navigation={narrativeNavigation}
+          onChangeWalkthroughAxis={onChangeWalkthroughAxis}
           onShareWalkthrough={onShareWalkthrough}
           settledCommentAnchors={settledCommentAnchors}
           shareWalkthroughDisabled={shareWalkthroughDisabled}
           showWhitespace={showWhitespace}
+          viewed={viewed}
           walkthrough={narrativeWalkthrough}
         />
       ) : mode === 'walkthrough' ? (
