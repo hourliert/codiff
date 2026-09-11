@@ -620,17 +620,8 @@ export type WalkthroughPreviousRound = {
   reviewedAt: number;
 };
 
-/**
- * How a walkthrough carves the change into chapters. `subsystem` groups by the
- * part of the codebase a change belongs to; `concept` groups by what the change
- * does, across package boundaries.
- */
-export type WalkthroughAxis = 'concept' | 'subsystem';
-
 export type NarrativeWalkthrough = {
   agent: 'codex' | 'claude' | 'opencode' | 'pi';
-  /** Which carving produced these chapters. Absent on walkthroughs stored before axes existed. */
-  axis?: WalkthroughAxis;
   chapters: ReadonlyArray<WalkthroughChapter>;
   /**
    * When present, the diff is a committable staging set: Codiff adds a commit
@@ -676,12 +667,6 @@ export type NarrativeWalkthroughResult =
     };
 
 export type NarrativeWalkthroughRequestOptions = {
-  /**
-   * How the walkthrough carves the change into chapters. The two axes are
-   * generated independently and cached separately, so switching between them
-   * costs one generation the first time and nothing after.
-   */
-  axis?: WalkthroughAxis;
   /** Ignore an exact cache hit and replace it with a newly generated result. */
   force?: boolean;
   /**

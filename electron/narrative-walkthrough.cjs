@@ -482,7 +482,6 @@ const normalizeNarrativeWalkthrough = (input, files, facts = {}, hunkIdByAlias =
   /** @type {Record<string, unknown>} */
   const result = {
     agent: normalizeEnum(facts.agent, AGENTS, 'codex'),
-    ...(facts.axis ? { axis: normalizeEnum(facts.axis, WALKTHROUGH_AXES, 'subsystem') } : {}),
     chapters,
     focus: cleanText(input.focus, 'Walk through the change.'),
     generatedAt: normalizeGeneratedAt(facts.generatedAt),
@@ -809,27 +808,10 @@ const getNarrativeWalkthroughTimeoutMs = (state, minimumMs = BASE_WALKTHROUGH_TI
   return Math.min(MAX_WALKTHROUGH_TIMEOUT_MS, Math.max(minimumMs, estimatedMs));
 };
 
-/**
- * How a walkthrough carves the change into chapters. Two readings of the same
- * diff, generated independently rather than derived from one another: a
- * subsystem pass can be read off the file paths, which leaves the model's
- * attention for the prose, while a concept pass has to invent a taxonomy first
- * and spends its effort there. Chaining them would anchor the second on the
- * first and buy one perspective twice.
- * @type {ReadonlySet<string>}
- */
-const WALKTHROUGH_AXES = new Set(['subsystem', 'concept']);
-
-const AXIS_RULES = {
-  concept: `- Organize chapters by what the change does, not by where its code lives. A chapter is one coherent behavior, contract, or phase of the work, and its stops may cross packages and directories freely. Name chapters for the idea, e.g. "Wire types", "Ingest", "Planner".`,
-  subsystem: `- Organize chapters by the part of the codebase each change belongs to -- package, app, service, or top-level directory. Name chapters for that part, e.g. "Core", "API", "Worker", "CLI", "Infra". Where one idea threads through several parts, keep it in the chapter that owns the behavior and say in the prose which other chapters carry the rest.`,
-};
-
 const buildWalkthroughSizingGuidance = (
   state,
   hasAutoViewedFiles = false,
   hasDescription = false,
-  axis = 'subsystem',
 ) => {
   const { fileCount, hunkCount } = getWalkthroughSize(state);
   // Only stated when the digest actually carries the flag, so a reviewer with no
@@ -879,7 +861,6 @@ ${thesisRule}
 Grouping contract:
 - ${stopInstruction}. Use fewer whenever they still preserve distinct state transitions, submission paths, or runtime contracts, and more when the diff genuinely contains that many separate review ideas. A single chapter may hold at most ${MAX_WALKTHROUGH_STOPS} stops; that limit is per chapter, not a total across the walkthrough.
 - ${chapterInstruction}. A chapter is a conceptual group, not a file. For one- or two-file diffs, prefer one chapter unless there are clearly separate review phases.
-${AXIS_RULES[axis] || AXIS_RULES.subsystem}
 - Chapter titles render in a compact top bar: keep each title to 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
 - Every stop must have a concise semantic title that names the review idea in roughly 2-6 words, e.g. "Prevent duplicate payments" or "Preserve offline drafts". Never use a filename or path as a stop title.
 - A stop may contain up to ${MAX_HUNKS_PER_WALKTHROUGH_GROUP} hunkIds, and on a large diff most stops should carry several. Use multiple hunkIds when the prose needs those hunks read together to understand one invariant, behavior, or repeated pattern.
@@ -902,7 +883,6 @@ const buildNarrativeWalkthroughRequest = (
   customPrompt,
   previousWalkthrough,
   autoViewedPatterns = [],
-  axis = 'subsystem',
 ) => {
   const { autoViewedCount, hunkIdByAlias, input } = buildPromptInput(state, autoViewedPatterns);
   return {
@@ -912,7 +892,7 @@ const buildNarrativeWalkthroughRequest = (
 Do not inspect the repository or run shell commands; use only the optional conversation context and repository digest below.
 If source.description is present, it is the author's own account of the change. Treat it as authoritative for what the change is *for* -- its goal, the problem it solves, and what the author believes it delivers -- because intent exists nowhere else: a diff shows what happened and never why it was wanted. Treat the changed files, patches, and hunk data as authoritative for what the change *does*. When the two disagree, the diff decides what the code does and the description still stands as what was intended, and that disagreement is itself worth reporting.
 
-${buildWalkthroughSizingGuidance(state, autoViewedCount > 0, Boolean(input.source?.description), axis)}
+${buildWalkthroughSizingGuidance(state, autoViewedCount > 0, Boolean(input.source?.description))}
 
 ${buildWalkthroughContextInput(context, agentLabel)}
 ${buildCustomPromptInput(customPrompt)}
@@ -930,7 +910,6 @@ const buildNarrativeWalkthroughPrompt = (
   customPrompt,
   previousWalkthrough,
   autoViewedPatterns = [],
-  axis = 'subsystem',
 ) =>
   buildNarrativeWalkthroughRequest(
     state,
@@ -939,7 +918,6 @@ const buildNarrativeWalkthroughPrompt = (
     customPrompt,
     previousWalkthrough,
     autoViewedPatterns,
-    axis,
   ).prompt;
 
 /**
@@ -953,7 +931,6 @@ const buildNarrativeWalkthroughPrompt = (
  * @param {WalkthroughContext | null | undefined} context
  * @param {unknown} customPrompt
  * @param {ReadonlyArray<string>} [autoViewedPatterns]
- * @param {string} [axis]
  */
 const getNarrativeWalkthroughCacheKey = (
   state,
@@ -962,7 +939,6 @@ const getNarrativeWalkthroughCacheKey = (
   context,
   customPrompt,
   autoViewedPatterns = [],
-  axis = 'subsystem',
 ) => {
   // The rendered prompt carries the auto-viewed annotations, so changing the
   // patterns invalidates the cache on its own.
@@ -973,16 +949,11 @@ const getNarrativeWalkthroughCacheKey = (
     customPrompt,
     undefined,
     autoViewedPatterns,
-    axis,
   );
   return createHash('sha256')
     .update(
       JSON.stringify({
         agent: agent.id,
-        // Carried in its own right rather than left to ride on the rendered
-        // prompt, so the two axes remain separate cache lineages even if the
-        // axis rule's wording is ever folded into shared guidance.
-        axis,
         diff: state.files.map((file) => ({
           fingerprint: file.fingerprint,
           oldPath: file.oldPath,
@@ -1011,7 +982,6 @@ const readNarrativeWalkthrough = async (
   customPrompt,
   previousWalkthrough,
   autoViewedPatterns = [],
-  axis = 'subsystem',
 ) => {
   try {
     const timeoutMs = getNarrativeWalkthroughTimeoutMs(state, agent.defaultTimeoutMs);
@@ -1023,7 +993,6 @@ const readNarrativeWalkthrough = async (
       customPrompt,
       previousWalkthrough,
       autoViewedPatterns,
-      axis,
     );
     agentOptions?.onProgress?.('agent-generation');
     const response = await agent.run(
@@ -1044,7 +1013,6 @@ const readNarrativeWalkthrough = async (
       state.files,
       {
         agent: agent.id,
-        axis,
         branch: state.branch,
         generatedAt: state.generatedAt,
         root: state.root,
@@ -1083,5 +1051,4 @@ module.exports = {
   normalizeNarrativeWalkthrough,
   readNarrativeWalkthrough,
   resolveNarrativeWalkthroughModel,
-  WALKTHROUGH_AXES,
 };

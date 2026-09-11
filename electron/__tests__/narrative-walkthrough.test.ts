@@ -21,7 +21,6 @@ const {
     customPrompt?: string,
     previousWalkthrough?: unknown,
     autoViewedPatterns?: ReadonlyArray<string>,
-    axis?: string,
   ) => string;
   getNarrativeWalkthroughCacheKey: (
     state: any,
@@ -30,7 +29,6 @@ const {
     context?: unknown,
     customPrompt?: string,
     autoViewedPatterns?: ReadonlyArray<string>,
-    axis?: string,
   ) => string;
   narrativeWalkthroughSchema: {
     properties: Record<string, any>;
@@ -760,67 +758,6 @@ test('prompts generated walkthroughs with PR descriptions as orientation only', 
   expect(prompt).toContain('authoritative for what the change is *for*');
   expect(prompt).toContain('authoritative for what the change *does*');
   expect(prompt).toContain('that disagreement is itself worth reporting');
-});
-
-const axisState = {
-  branch: 'main',
-  files: files.slice(0, 1),
-  generatedAt: 1,
-  root: '/repo',
-  source: { type: 'working-tree' as const },
-};
-
-test('carves chapters along the axis it is asked for', () => {
-  const subsystem = buildNarrativeWalkthroughPrompt(
-    axisState,
-    undefined,
-    'Codex',
-    undefined,
-    undefined,
-    [],
-    'subsystem',
-  );
-  const concept = buildNarrativeWalkthroughPrompt(
-    axisState,
-    undefined,
-    'Codex',
-    undefined,
-    undefined,
-    [],
-    'concept',
-  );
-
-  expect(subsystem).toContain('Organize chapters by the part of the codebase');
-  expect(concept).toContain('Organize chapters by what the change does');
-  expect(subsystem).not.toContain('Organize chapters by what the change does');
-  expect(concept).not.toContain('Organize chapters by the part of the codebase');
-});
-
-test('defaults to the subsystem axis, including for an unknown one', () => {
-  const fallback = buildNarrativeWalkthroughPrompt(axisState);
-  const unknown = buildNarrativeWalkthroughPrompt(
-    axisState,
-    undefined,
-    'Codex',
-    undefined,
-    undefined,
-    [],
-    'sideways',
-  );
-
-  expect(fallback).toContain('Organize chapters by the part of the codebase');
-  expect(unknown).toContain('Organize chapters by the part of the codebase');
-});
-
-test('caches the two axes as separate lineages', () => {
-  const agent = { id: 'codex', label: 'Codex', normalizeModel: (model: unknown) => model };
-  const keyFor = (axis: string) =>
-    getNarrativeWalkthroughCacheKey(axisState, agent, 'model', undefined, undefined, [], axis);
-
-  // Both carvings of one diff have to survive at once: switching between them
-  // must not evict the other and charge a second generation to come back.
-  expect(keyFor('subsystem')).not.toBe(keyFor('concept'));
-  expect(keyFor('subsystem')).toBe(keyFor('subsystem'));
 });
 
 test('asks for a thesis only when there is a description to judge against', () => {

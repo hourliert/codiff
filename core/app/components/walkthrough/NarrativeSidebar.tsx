@@ -17,12 +17,7 @@ import {
 } from '../../../lib/narrative-walkthrough.ts';
 import type { StopContinuity } from '../../../lib/walkthrough-continuity.ts';
 import { formatStopContinuity, getStopContinuity } from '../../../lib/walkthrough-continuity.ts';
-import type {
-  ChangedFile,
-  NarrativeWalkthrough,
-  ReviewCommentAnchor,
-  WalkthroughAxis,
-} from '../../../types.ts';
+import type { ChangedFile, NarrativeWalkthrough, ReviewCommentAnchor } from '../../../types.ts';
 import { ChapterIcon } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
@@ -170,15 +165,7 @@ function SupportingFilesStop({
  * of it has been read. Both answer the same question a long walkthrough raises
  * -- "how much of this do I still owe?" -- which a list of stops alone does not.
  */
-function TocReadingBar({
-  axis,
-  navigation,
-  onChangeAxis,
-}: {
-  axis: WalkthroughAxis | undefined;
-  navigation: NarrativeNavigation;
-  onChangeAxis?: (axis: WalkthroughAxis) => void;
-}) {
+function TocReadingBar({ navigation }: { navigation: NarrativeNavigation }) {
   const { importanceFilter, stopCounts, walkthroughView } = navigation;
   if (!walkthroughView) {
     return null;
@@ -216,39 +203,15 @@ function TocReadingBar({
           </button>
         </span>
       ) : null}
-      {onChangeAxis ? (
-        <span className="wt-toc-filter wt-toc-axis">
-          <button
-            aria-pressed={axis !== 'concept'}
-            className={`wt-toc-filter-option${axis !== 'concept' ? ' active' : ''}`}
-            onClick={() => onChangeAxis('subsystem')}
-            title="Chapters follow the part of the codebase each change belongs to."
-            type="button"
-          >
-            By area
-          </button>
-          <button
-            aria-pressed={axis === 'concept'}
-            className={`wt-toc-filter-option${axis === 'concept' ? ' active' : ''}`}
-            onClick={() => onChangeAxis('concept')}
-            title="Chapters follow what the change does, across package boundaries. Generated the first time you ask for it."
-            type="button"
-          >
-            By idea
-          </button>
-        </span>
-      ) : null}
     </div>
   );
 }
 
 export function NarrativeSidebar({
   allowCommit = true,
-  axis,
   changedSincePaths = emptyPaths,
   files,
   navigation,
-  onChangeWalkthroughAxis,
   onShareWalkthrough,
   settledCommentAnchors = emptyAnchors,
   shareWalkthroughDisabled = false,
@@ -257,16 +220,9 @@ export function NarrativeSidebar({
   walkthrough,
 }: {
   allowCommit?: boolean;
-  /**
-   * The carving that was asked for, which leads the one the loaded walkthrough
-   * reports: while the other axis is generating, the control stays on the
-   * choice the reviewer just made rather than snapping back.
-   */
-  axis?: WalkthroughAxis;
   changedSincePaths?: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
   navigation: NarrativeNavigation;
-  onChangeWalkthroughAxis?: (axis: WalkthroughAxis) => void;
   onShareWalkthrough?: () => void;
   settledCommentAnchors?: ReadonlyArray<ReviewCommentAnchor>;
   shareWalkthroughDisabled?: boolean;
@@ -307,11 +263,7 @@ export function NarrativeSidebar({
         <p>{renderInlineMarkdown(walkthrough.focus)}</p>
       </div>
 
-      <TocReadingBar
-        axis={axis ?? walkthrough.axis}
-        navigation={navigation}
-        onChangeAxis={onChangeWalkthroughAxis}
-      />
+      <TocReadingBar navigation={navigation} />
 
       <div className="wt-toc-scroll">
         {walkthroughView.chapters.map((chapter) => {
