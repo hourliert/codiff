@@ -68,6 +68,7 @@ import {
   type WalkthroughNote,
 } from './lib/app-types.ts';
 import {
+  getInMemorySectionContents,
   isPatchOnlyDiffSection,
   shouldLoadDiffSectionContents,
   shouldPreloadSectionContentsForSearch,
@@ -590,8 +591,21 @@ export default function App() {
   const loadDiffSectionContents = useCallback(
     async (file: ChangedFile, section: DiffSection): Promise<FileDiffLoadedFiles> => {
       const currentState = stateRef.current;
-      if (!currentState || !supportsLazyDiffContent(currentState.source)) {
+      if (!currentState) {
         throw new Error(`Cannot load diff contents for '${file.path}'.`);
+      }
+
+      // A source that is not loaded lazily -- a pull request -- already holds both
+      // sides of every file it could read. A walkthrough stop drops them to show
+      // only its own hunks, so expanding context there has to come back to state
+      // for them. Asking the main process instead would read the working tree,
+      // which is not the pull request's revision.
+      if (!supportsLazyDiffContent(currentState.source)) {
+        const contents = getInMemorySectionContents(currentState.files, file.path, section.id);
+        if (!contents) {
+          throw new Error(`No file contents available for '${file.path}'.`);
+        }
+        return contents;
       }
 
       const loadedSection = await window.codiff.getDiffSectionContent({
