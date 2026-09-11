@@ -89,6 +89,15 @@ export const getViewedFileDelta = (
     .map(({ path, viewed }) => ({ path, viewed }));
 
 /**
+ * How many files are marked viewed as a whole. Per-block marks do not count
+ * until they add up to the file, which is also what the review host counts.
+ */
+export const countViewedFiles = (
+  files: ReadonlyArray<ChangedFile>,
+  viewed: Readonly<Record<string, string>>,
+) => files.filter((file) => viewed[file.path] === file.fingerprint).length;
+
+/**
  * Records which revision the reviewer's auto-viewed patterns were last applied
  * to. Namespaced so it cannot collide with a repository path used as a review
  * key, and stored alongside the marks themselves so it travels with them.

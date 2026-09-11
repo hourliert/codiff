@@ -11,9 +11,6 @@ export type NarrativeViewMode = 'stop' | 'support' | 'commit';
 
 export type NarrativeNavigation = ReturnType<typeof useNarrativeNavigation>;
 
-const firstStopId = (walkthrough: NarrativeWalkthrough | null): string | undefined =>
-  walkthrough?.chapters[0]?.stops[0]?.id;
-
 /**
  * Shared navigation state for the narrative walkthrough, owned by App and passed
  * to both the sidebar table-of-contents and the main hybrid view.
@@ -51,11 +48,6 @@ export const useNarrativeNavigation = (
     index: 0,
     kind: 'stop',
     nonce: 0,
-  });
-  const [supportVisited, setSupportVisited] = useState(false);
-  const [visited, setVisited] = useState<ReadonlySet<string>>(() => {
-    const stopId = firstStopId(walkthrough);
-    return new Set(stopId ? [stopId] : []);
   });
 
   const [commitSelected, setCommitSelected] = useState<ReadonlySet<string>>(
@@ -102,9 +94,6 @@ export const useNarrativeNavigation = (
       setMode('stop');
       setIndex(0);
       setScrollTarget({ index: 0, kind: 'stop', nonce: 0 });
-      setSupportVisited(false);
-      const stopId = firstStopId(walkthrough);
-      setVisited(new Set(stopId ? [stopId] : []));
     }
   }
 
@@ -153,20 +142,6 @@ export const useNarrativeNavigation = (
     }
   }, [commitPaths, resetKey, walkthrough]);
 
-  const markVisited = useCallback((stopId: string | undefined) => {
-    if (!stopId) {
-      return;
-    }
-    setVisited((current) => {
-      if (current.has(stopId)) {
-        return current;
-      }
-      const next = new Set(current);
-      next.add(stopId);
-      return next;
-    });
-  }, []);
-
   const goStop = useCallback(
     (target: number) => {
       if (!walkthroughView) {
@@ -175,12 +150,11 @@ export const useNarrativeNavigation = (
       const clamped = Math.max(0, Math.min(walkthroughView.sequence.length - 1, target));
       setMode('stop');
       setIndex(clamped);
-      markVisited(walkthroughView.sequence[clamped]?.id);
       pendingStopScrollRef.current = { index: clamped, walkthrough };
       pendingSupportScrollRef.current = null;
       setScrollTarget((current) => ({ index: clamped, kind: 'stop', nonce: current.nonce + 1 }));
     },
-    [walkthrough, walkthroughView, markVisited],
+    [walkthrough, walkthroughView],
   );
 
   const goNext = useCallback(() => goStop(index + 1), [goStop, index]);
@@ -210,10 +184,9 @@ export const useNarrativeNavigation = (
         : undefined;
       const target = exact >= 0 ? exact : (following ?? 0);
       setIndex(target);
-      markVisited(nextView.sequence[target]?.id);
       setScrollTarget((current) => ({ index: target, kind: 'stop', nonce: current.nonce + 1 }));
     },
-    [index, markVisited, mode, walkthrough, walkthroughView],
+    [index, mode, walkthrough, walkthroughView],
   );
 
   const syncIndexFromScroll = useCallback(
@@ -240,9 +213,8 @@ export const useNarrativeNavigation = (
       }
       setMode('stop');
       setIndex((current) => (current === clamped ? current : clamped));
-      markVisited(walkthroughView.sequence[clamped]?.id);
     },
-    [walkthrough, walkthroughView, markVisited],
+    [walkthrough, walkthroughView],
   );
 
   const releaseStopScrollLock = useCallback(() => {
@@ -263,7 +235,6 @@ export const useNarrativeNavigation = (
     setMode('support');
     pendingSupportScrollRef.current = { walkthrough };
     setScrollTarget((current) => ({ ...current, kind: 'support', nonce: current.nonce + 1 }));
-    setSupportVisited(true);
   }, [walkthrough, walkthroughView, leaveStopMode]);
 
   // Scrolling across a support block while a clicked stop is still being
@@ -279,7 +250,6 @@ export const useNarrativeNavigation = (
     }
     pendingSupportScrollRef.current = null;
     setMode('support');
-    setSupportVisited(true);
   }, [walkthrough]);
 
   const enterCommit = useCallback(() => {
@@ -332,12 +302,10 @@ export const useNarrativeNavigation = (
     setCommitSubject,
     setImportanceFilter,
     stopCounts,
-    supportVisited,
     syncIndexFromScroll,
     syncSupportFromScroll,
     toggleCommitFile,
     toggleCommitGroup,
-    visited,
     walkthroughView,
   };
 };

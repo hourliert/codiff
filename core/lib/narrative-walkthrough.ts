@@ -413,6 +413,39 @@ export const isWalkthroughStopViewed = (
   return true;
 };
 
+/**
+ * Whether everything the walkthrough left to its Support step is marked viewed:
+ * the support groups, and whatever no stop or group covers at all. It asks the
+ * same question as a stop, so the Support tick means what every other tick does.
+ * An empty Support step is never done, because there is nothing to have viewed.
+ */
+export const isWalkthroughSupportViewed = (
+  files: ReadonlyArray<ChangedFile>,
+  view: WalkthroughView,
+  viewed: Readonly<Record<string, string>>,
+  showWhitespace: boolean,
+): boolean => {
+  const groups = view.support.filter((group) => group.hunks.length > 0);
+  const uncovered = getUncoveredWalkthroughFiles(files, view, showWhitespace);
+  if (groups.length === 0 && uncovered.length === 0) {
+    return false;
+  }
+
+  return (
+    groups.every((group) => isWalkthroughStopViewed(group, files, viewed)) &&
+    uncovered.every((entry) => {
+      const file = files.find((candidate) => candidate.path === entry.path);
+      return (
+        file != null &&
+        isReviewIdentityViewed(
+          viewed,
+          getUncoveredWalkthroughReviewIdentity(file, view, showWhitespace),
+        )
+      );
+    })
+  );
+};
+
 /** How many stops each filter would show, for a control that has to label itself. */
 /**
  * How much of the reading each chapter carries, as a share of the whole
